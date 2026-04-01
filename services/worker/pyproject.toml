@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tim-mail-monitor-worker"
+version = "0.1.0"
+description = "Milestone 1 worker scaffold for Tim Mail Monitor"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0",
+  "msal>=1.31.0",
+  "psycopg[binary]>=3.2.0",
+  "python-dotenv>=1.0.1",
+  "requests>=2.32.0",
+  "uvicorn[standard]>=0.30.0",
+]
+
+[project.scripts]
+tim-mail-monitor-worker = "tim_mail_monitor_worker.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
