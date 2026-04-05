@@ -62,13 +62,15 @@ class GraphClient:
         folder_name: str,
         since: datetime | None,
         max_messages: int,
+        select_fields: tuple[str, ...] | None = None,
     ) -> Iterator[dict[str, Any]]:
         time_field = "sentDateTime" if folder_name == "SentItems" else "receivedDateTime"
         params: dict[str, Any] = {
             "$top": min(max_messages, self.settings.graph_message_page_size),
             "$orderby": f"{time_field} desc",
             "$select": ",".join(
-                [
+                select_fields
+                or (
                     "id",
                     "internetMessageId",
                     "conversationId",
@@ -95,7 +97,7 @@ class GraphClient:
                     "flag",
                     "inferenceClassification",
                     "webLink",
-                ]
+                )
             ),
         }
         if since is not None:
@@ -128,19 +130,5 @@ class GraphClient:
                 f"{self.settings.microsoft_graph_base_url}/users/"
                 f"{mailbox_address}/messages/{message_id}/attachments"
             ),
-            params={
-                "$select": ",".join(
-                    [
-                        "id",
-                        "name",
-                        "contentType",
-                        "size",
-                        "isInline",
-                        "contentId",
-                        "lastModifiedDateTime",
-                        "@odata.type",
-                    ]
-                )
-            },
         )
         return list(payload.get("value", []))

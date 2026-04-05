@@ -24,6 +24,7 @@ Optional tuning values:
 - `GRAPH_MAIL_FOLDERS=Inbox,SentItems`
 - `GRAPH_MESSAGE_PAGE_SIZE=50`
 - `SYNC_LOOKBACK_DAYS=14`
+- `SYNC_OVERLAP_MINUTES=5`
 - `SYNC_MAX_MESSAGES_PER_FOLDER=200`
 
 ## Microsoft Graph Permissions
@@ -60,6 +61,45 @@ The worker will:
 4. Normalize messages, recipients, and attachments.
 5. Upsert `thread_records` and `messages` without duplicating existing Graph message IDs.
 6. Refresh thread-level aggregates and mark the sync run complete.
+
+If `--lookback-days` is omitted, the worker uses `mailbox_configs.last_successful_sync_at`
+with a small overlap buffer for normal incremental polling.
+
+## Volume Estimate
+
+```powershell
+python -m tim_mail_monitor_worker estimate-volume --days 30 --max-messages-per-folder 2000
+```
+
+This command uses Graph metadata only, so it is much lighter than a full sync.
+
+## Dashboard Working Set
+
+The worker now marks each thread in `thread_records` with a lightweight
+dashboard inclusion state:
+
+- `dashboard_status='working'`
+- `dashboard_reason='unanswered_external'` or `recent_external_inbound`
+- `awaiting_internal_response=true/false`
+
+This keeps the web UI focused on a staff working set instead of mirroring the
+entire mailbox. It is still a heuristic layer, not the final business-trigger
+system for deadline changes, scope comments, cancellations, and similar cases.
+
+The current rule-based trigger pass is intentionally narrow and focused on:
+
+- `deadline_change`
+- `scope_change`
+- `meeting_request`
+- `progress_request`
+- `cancellation_risk`
+
+You can recompute these from stored messages with:
+
+```powershell
+python -m tim_mail_monitor_worker rebuild-triggers
+```
+
 
 ## Current Boundaries
 

@@ -1,17 +1,76 @@
-import { SectionPage } from "@/components/section-page";
+import { DashboardFiltersPanel } from "@/components/dashboard-filters";
+import { ThreadList } from "@/components/thread-list";
+import {
+  buildReturnToPath,
+  getDashboardMetrics,
+  getThreadsForDashboard,
+  parseDashboardFilters,
+} from "@/lib/dashboard-data";
 
-export default function NeedsAttentionPage() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export default async function NeedsAttentionPage({
+  searchParams,
+}: Readonly<{
+  searchParams: SearchParams;
+}>) {
+  const resolvedSearchParams = await searchParams;
+  const filters = parseDashboardFilters(resolvedSearchParams);
+  const returnTo = buildReturnToPath("/needs-attention", resolvedSearchParams);
+
+  const [threads, metrics] = await Promise.all([
+    getThreadsForDashboard("needs_attention", filters, 40),
+    getDashboardMetrics(),
+  ]);
+
   return (
-    <SectionPage
-      eyebrow="Needs Attention"
-      title="Critical client conversations will surface here"
-      description="This queue will eventually prioritize important external threads, stalled responses, escalation signals, and principal-visible items that need staff intervention."
-      highlights={[
-        "Placeholder table and workflow surface only",
-        "Intended future inputs: urgency filters, reply-state logic, and event detection",
-        "Will support assignment, note-taking, and status updates",
-      ]}
-    />
+    <div className="content__inner">
+      <header className="page-header">
+        <span className="page-header__eyebrow">Needs Attention</span>
+        <h1>Open operational threads that need staff review</h1>
+        <p>
+          This queue is now driven by deterministic thread state. If a thread is
+          open, it lives here. If it is handled or disregarded, it moves out.
+        </p>
+      </header>
+
+      <section className="grid grid--three">
+        <article className="metric-card">
+          <span className="metric-card__label">Open Threads</span>
+          <strong className="metric-card__value">{metrics.needsAttention}</strong>
+          <p className="metric-card__copy">
+            Threads whose current review state is open.
+          </p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Urgent Open</span>
+          <strong className="metric-card__value">{metrics.urgentOpen}</strong>
+          <p className="metric-card__copy">
+            Open threads carrying at least one urgent event tag.
+          </p>
+        </article>
+        <article className="metric-card">
+          <span className="metric-card__label">Unanswered Open</span>
+          <strong className="metric-card__value">{metrics.unansweredOpen}</strong>
+          <p className="metric-card__copy">
+            Open threads whose latest substantive external message still lacks a
+            later reply.
+          </p>
+        </article>
+      </section>
+
+      <DashboardFiltersPanel
+        dashboard="needs_attention"
+        filters={filters}
+        key={returnTo}
+      />
+
+      <ThreadList
+        dashboard="needs_attention"
+        emptyMessage="No open threads match the current filters."
+        items={threads}
+        returnTo={returnTo}
+      />
+    </div>
   );
 }
-

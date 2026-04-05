@@ -6,15 +6,18 @@ from dataclasses import replace
 from datetime import timedelta
 
 from tim_mail_monitor_worker.config import Settings, get_settings
+from tim_mail_monitor_worker.event_detector import detect_message_events
 from tim_mail_monitor_worker.db import (
     SyncCounters,
     complete_sync_run,
     connect_db,
     create_sync_run,
     ensure_mailbox_config,
+    fail_running_sync_runs,
     get_internal_domains,
     refresh_thread_record,
     replace_attachments,
+    replace_communication_events,
     replace_message_recipients,
     upsert_message,
     upsert_thread_record,
@@ -22,6 +25,7 @@ from tim_mail_monitor_worker.db import (
 )
 from tim_mail_monitor_worker.graph_client import GraphClient
 from tim_mail_monitor_worker.message_normalizer import normalize_graph_message
+from tim_mail_monitor_worker.thread_state_updater import classify_threads
 from tim_mail_monitor_worker.thread_builder import build_thread_key
 
 
@@ -53,9 +57,8 @@ def sync_mailbox(
     touched_thread_ids: set[str] = set()
     sync_run_id: str | None = None
     mailbox_config_id: str | None = None
-    checkpoint_start = utc_now() - timedelta(
-        days=lookback_days or settings.sync_lookback_days
-    )
+    checkpoint_mode = "backfill" if lookback_days is not None else "incremental"
+    checkpoint_start = utc_now() - timedelta(days=settings.sync_lookback_days)
 
     try:
         mailbox_config = ensure_mailbox_config(
@@ -64,6 +67,22 @@ def sync_mailbox(
             display_name=settings.tim_mailbox_display_name,
             initial_sync_lookback_days=lookback_days or settings.sync_lookback_days,
         )
+        fail_running_sync_runs(
+            conn,
+            mailbox_config_id=mailbox_config.id,
+            reason="Superseded by a newer sync run.",
+        )
+        if lookback_days is not None:
+            checkpoint_start = utc_now() - timedelta(days=lookback_days)
+        elif mailbox_config.last_successful_sync_at is not None:
+            checkpoint_start = mailbox_config.last_successful_sync_at - timedelta(
+                minutes=settings.sync_overlap_minutes
+            )
+        else:
+            checkpoint_mode = "initial_backfill"
+            checkpoint_start = utc_now() - timedelta(
+                days=mailbox_config.initial_sync_lookback_days
+            )
         mailbox_config_id = mailbox_config.id
         sync_run_id = create_sync_run(
             conn,
@@ -140,9 +159,26 @@ def sync_mailbox(
                     message_id=message_id,
                     attachments=normalized_message.attachments,
                 )
+                replace_communication_events(
+                    conn,
+                    thread_record_id=thread_record_id,
+                    message_id=message_id,
+                    events=detect_message_events(
+                        normalized_message,
+                        internal_domains=internal_domains,
+                    ),
+                )
 
         for thread_record_id in touched_thread_ids:
             refresh_thread_record(conn, thread_record_id=thread_record_id)
+
+        classification_summary = classify_threads(
+            conn,
+            settings=settings,
+            limit=len(touched_thread_ids) or 0,
+            only_stale=False,
+            thread_ids=list(touched_thread_ids),
+        )
 
         counters.threads_touched = len(touched_thread_ids)
         complete_sync_run(
@@ -157,6 +193,8 @@ def sync_mailbox(
         return {
             "mailbox_address": effective_mailbox,
             "folders": list(settings.graph_mail_folders),
+            "checkpoint_mode": checkpoint_mode,
+            "checkpoint_start": checkpoint_start.isoformat(),
             "messages_seen": counters.messages_seen,
             "messages_inserted": counters.messages_inserted,
             "messages_updated": counters.messages_updated,
@@ -164,6 +202,8 @@ def sync_mailbox(
             "recipients_upserted": counters.recipients_upserted,
             "attachments_upserted": counters.attachments_upserted,
             "sync_run_id": sync_run_id,
+            "classifications_applied": classification_summary["classifications_applied"],
+            "classification_failures": classification_summary["failures"],
         }
     except Exception as exc:
         conn.rollback()

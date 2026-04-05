@@ -9,12 +9,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       <aside className="sidebar">
         <div className="sidebar__brand">
           <span className="sidebar__eyebrow">Internal Tool</span>
-          <Link className="sidebar__title" href="/dashboard">
+          <Link className="sidebar__title" href="/needs-attention">
             Tim Mail Monitor
           </Link>
           <p className="sidebar__copy">
-            Milestone 1 layout for mailbox monitoring, staff review, and
-            future role-scoped workflows.
+            Thread-state dashboard for Tim&apos;s mailbox: open work, closed items,
+            and non-promoted context in one operational model.
           </p>
         </div>
 
@@ -38,4 +38,3 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     </div>
   );
 }
-

@@ -36,7 +36,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3011`.
 
 ### Worker
 
@@ -60,6 +60,14 @@ Mailbox sync:
 python -m tim_mail_monitor_worker sync-mailbox --lookback-days 7 --max-messages-per-folder 25
 ```
 
+LLM classification:
+
+```powershell
+python -m tim_mail_monitor_worker classify-threads --limit 25
+```
+
+This command requires `OPENAI_API_KEY` plus the classification-related environment variables in `.env.example`. If no key is configured, the classifier safely skips work and leaves the existing thread state untouched.
+
 ## Database Setup
 
 Run the SQL migrations in `supabase/migrations/` against your Supabase/Postgres database, then optionally apply the example seed in `supabase/seed/20260401133000_mailbox_ingestion_example.sql` after replacing the placeholder domain and mailbox values.
@@ -67,7 +75,7 @@ Run the SQL migrations in `supabase/migrations/` against your Supabase/Postgres 
 ## Milestone 2 Boundaries
 
 - No webhook subscriptions yet
-- No AI extraction or summarization yet
+- Thread-level LLM classification contract and persistence are now scaffolded, but a live OpenAI API key is still required before model-derived system state will be applied
 - No Teams alerts yet
 - No final role-based permissions or RLS yet
 - No final dashboard polish yet

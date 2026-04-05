@@ -1,42 +1,22 @@
 export const navigationItems = [
   {
-    href: "/dashboard",
-    label: "Dashboard",
-    description: "High-level mailbox and workflow overview.",
-  },
-  {
     href: "/needs-attention",
     label: "Needs Attention",
-    description: "Priority threads requiring staff review.",
+    description: "Open operational threads that currently need staff review.",
   },
   {
-    href: "/recent-updates",
-    label: "Recent Updates",
-    description: "Latest activity across synced communications.",
+    href: "/closed",
+    label: "Closed",
+    description: "Threads that were previously active and are now handled or disregarded.",
   },
   {
-    href: "/unanswered",
-    label: "Unanswered",
-    description: "Threads without a recorded external reply.",
-  },
-  {
-    href: "/clients",
-    label: "Clients",
-    description: "Client-level communication and context views.",
-  },
-  {
-    href: "/projects",
-    label: "Projects",
-    description: "Project-linked mail and ownership surfaces.",
-  },
-  {
-    href: "/digest-history",
-    label: "Digest History",
-    description: "Sent summaries and reporting placeholders.",
+    href: "/not-promoted",
+    label: "Not Promoted",
+    description: "Included threads that never entered the open queue.",
   },
   {
     href: "/admin",
     label: "Admin",
-    description: "Future configuration and role management area.",
+    description: "State inspection, sync health, and lead-only controls.",
   },
 ] as const;

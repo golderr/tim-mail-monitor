@@ -62,3 +62,13 @@ class NormalizedMessage:
     recipients: list[NormalizedRecipient] = field(default_factory=list)
     attachments: list[NormalizedAttachment] = field(default_factory=list)
 
+
+@dataclass(frozen=True)
+class TriggeredEvent:
+    event_type: str
+    label: str
+    severity: str
+    matched_terms: tuple[str, ...]
+    confidence: float | None = None
+    decision_source: str = "rule"
+    decision_version: str | None = None

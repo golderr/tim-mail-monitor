@@ -3,18 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3011",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --port 3011",
     "lint": "eslint ."
   },
   "dependencies": {
+    "dotenv": "^17.2.1",
     "next": "16.2.2",
+    "pg": "^8.16.3",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

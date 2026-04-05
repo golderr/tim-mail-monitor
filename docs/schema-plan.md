@@ -26,6 +26,10 @@ Milestone 1 does not create the full schema yet. This document captures the firs
   - Polling run history and counters
 - `communication_events`
   - Stub table reserved for later event extraction
+- `thread_classifications`
+  - Persisted LLM classification runs, model versioning, raw JSON outputs, and confidence
+- `thread_override_feedback`
+  - Manual corrections against classifier-derived state for future learning/evaluation
 
 ## Auth Notes
 
@@ -40,4 +44,3 @@ Milestone 1 does not create the full schema yet. This document captures the firs
 3. Add workflow tables for notes, statuses, and assignments.
 4. Add digest and notification support.
 5. Add AI-derived extraction and event enrichment only after ingestion is stable.
-
