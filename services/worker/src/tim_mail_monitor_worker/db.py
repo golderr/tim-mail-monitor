@@ -1434,6 +1434,29 @@ def iter_thread_ids_for_classification(
         return [str(row["id"]) for row in cur.fetchall()]
 
 
+def filter_thread_ids_for_classification(
+    conn: psycopg.Connection[Any],
+    *,
+    thread_ids: list[str],
+) -> list[str]:
+    if not thread_ids:
+        return []
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select id::text
+            from public.thread_records
+            where has_external_participants = true
+              and id = any(%s::uuid[])
+            """,
+            (thread_ids,),
+        )
+        visible_thread_ids = {str(row["id"]) for row in cur.fetchall()}
+
+    return [thread_id for thread_id in thread_ids if thread_id in visible_thread_ids]
+
+
 def load_thread_classification_context(
     conn: psycopg.Connection[Any],
     *,

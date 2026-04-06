@@ -11,6 +11,7 @@ from tim_mail_monitor_worker.ai_extractor import (
 from tim_mail_monitor_worker.config import Settings, get_settings
 from tim_mail_monitor_worker.db import (
     apply_thread_classification_result,
+    filter_thread_ids_for_classification,
     iter_thread_ids_for_classification,
     load_thread_classification_context,
     persist_failed_thread_classification,
@@ -31,11 +32,17 @@ def classify_threads(
     if not is_classifier_configured(settings):
         return {"threads_considered": 0, "classifications_applied": 0, "failures": 0}
 
-    target_thread_ids = thread_ids or iter_thread_ids_for_classification(
-        conn,
-        limit=limit,
-        only_stale=only_stale,
-    )
+    if thread_ids is None:
+        target_thread_ids = iter_thread_ids_for_classification(
+            conn,
+            limit=limit,
+            only_stale=only_stale,
+        )
+    else:
+        target_thread_ids = filter_thread_ids_for_classification(
+            conn,
+            thread_ids=thread_ids,
+        )
 
     applied = 0
     failures = 0

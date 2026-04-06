@@ -215,7 +215,7 @@ function buildDashboardWhereClause(
   dashboard: DashboardName,
   filters: DashboardFilters,
 ) {
-  const conditions: string[] = [];
+  const conditions: string[] = ["has_external_participants = true"];
   const params: unknown[] = [];
 
   switch (dashboard) {
@@ -451,6 +451,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
             and reply_state = 'unanswered'
         )::text as unanswered_open
       from public.thread_records
+      where has_external_participants = true
     `),
     query<{
       status: string;
