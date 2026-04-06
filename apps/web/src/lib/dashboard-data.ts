@@ -90,6 +90,14 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
+function normalizeMultilineText(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return value.replace(/\r\n?/g, "\n");
+}
+
 function normalizeRecipients(value: unknown): ThreadRecipient[] {
   if (!Array.isArray(value)) {
     return [];
@@ -120,7 +128,7 @@ function normalizeMessages(value: Array<Record<string, unknown>>): ThreadMessage
     id: typeof message.id === "string" ? message.id : "",
     direction: message.direction === "received" ? "received" : "sent",
     subject: typeof message.subject === "string" ? message.subject : null,
-    bodyText: typeof message.body_text === "string" ? message.body_text : null,
+    bodyText: normalizeMultilineText(message.body_text),
     senderName: typeof message.sender_name === "string" ? message.sender_name : null,
     senderEmail:
       typeof message.sender_email === "string" ? message.sender_email : null,

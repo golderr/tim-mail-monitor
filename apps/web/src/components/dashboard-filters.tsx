@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useState } from "react";
 
 import type { DashboardFilters, DashboardName } from "@/lib/dashboard-data";
 
@@ -38,10 +38,11 @@ export function DashboardFiltersPanel({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [client, setClient] = useState(filters.client ?? "");
-  const [projectNumber, setProjectNumber] = useState(filters.projectNumber ?? "");
-
-  const selectedTags = useMemo(() => filters.tags ?? [], [filters.tags]);
+  const currentClient = filters.client ?? "";
+  const currentProjectNumber = filters.projectNumber ?? "";
+  const selectedTags = filters.tags ?? [];
+  const [client, setClient] = useState(currentClient);
+  const [projectNumber, setProjectNumber] = useState(currentProjectNumber);
 
   const updateQuery = useCallback(
     (next: Record<string, string | string[] | undefined>) => {
@@ -62,12 +63,26 @@ export function DashboardFiltersPanel({
       }
 
       const queryString = params.toString();
-      router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+      startTransition(() => {
+        router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+      });
     },
     [pathname, router, searchParams],
   );
 
   useEffect(() => {
+    setClient(currentClient);
+  }, [currentClient]);
+
+  useEffect(() => {
+    setProjectNumber(currentProjectNumber);
+  }, [currentProjectNumber]);
+
+  useEffect(() => {
+    if (client === currentClient && projectNumber === currentProjectNumber) {
+      return;
+    }
+
     const handle = window.setTimeout(() => {
       updateQuery({
         client: client || undefined,
@@ -76,7 +91,13 @@ export function DashboardFiltersPanel({
     }, 350);
 
     return () => window.clearTimeout(handle);
-  }, [client, projectNumber, updateQuery]);
+  }, [
+    client,
+    currentClient,
+    currentProjectNumber,
+    projectNumber,
+    updateQuery,
+  ]);
 
   return (
     <section className="panel filters-panel">

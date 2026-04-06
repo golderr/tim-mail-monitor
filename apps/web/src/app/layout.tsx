@@ -13,8 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Tim Mail Monitor",
+  title: "TMC Email Monitor",
   description: "Internal mailbox monitoring dashboard scaffold",
+  icons: {
+    icon: "/icon",
+    shortcut: "/icon",
+  },
 };
 
 export default function RootLayout({

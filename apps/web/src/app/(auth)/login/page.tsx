@@ -6,7 +6,7 @@ export default function LoginPage() {
       <section className="login-card">
         <div className="login-card__intro">
           <span className="page-header__eyebrow">Milestone 1 Access</span>
-          <h1>Tim Mail Monitor</h1>
+          <h1>TMC Email Monitor</h1>
           <p>
             This is a placeholder internal login for the Milestone 1 shell.
             Replace this with real staff authentication and role checks in the
@@ -38,4 +38,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

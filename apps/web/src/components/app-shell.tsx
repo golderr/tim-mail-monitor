@@ -10,12 +10,8 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         <div className="sidebar__brand">
           <span className="sidebar__eyebrow">Internal Tool</span>
           <Link className="sidebar__title" href="/needs-attention">
-            Tim Mail Monitor
+            TMC Email Monitor
           </Link>
-          <p className="sidebar__copy">
-            Thread-state dashboard for Tim&apos;s mailbox: open work, closed items,
-            and non-promoted context in one operational model.
-          </p>
         </div>
 
         <SidebarNav />

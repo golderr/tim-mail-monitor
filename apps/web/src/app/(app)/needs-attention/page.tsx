@@ -27,10 +27,10 @@ export default async function NeedsAttentionPage({
     <div className="content__inner">
       <header className="page-header">
         <span className="page-header__eyebrow">Needs Attention</span>
-        <h1>Open operational threads that need staff review</h1>
+        <h1>Open threads that require staff attention.</h1>
         <p>
-          This queue is now driven by deterministic thread state. If a thread is
-          open, it lives here. If it is handled or disregarded, it moves out.
+          If a thread is open, it lives here. If it is handled or disregarded,
+          it moves out.
         </p>
       </header>
 
