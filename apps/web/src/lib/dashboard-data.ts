@@ -60,6 +60,7 @@ export type DashboardThread = {
   title: string;
   cardHeader: string | null;
   eventTags: string[];
+  primaryEventTag: string | null;
   isUrgent: boolean;
   reviewState: string;
   replyState: string;
@@ -232,7 +233,11 @@ function buildDashboardWhereClause(
     const tagConditions: string[] = [];
     for (const tag of filters.tags) {
       params.push(tag);
-      tagConditions.push(`event_tags ? $${params.length}`);
+      tagConditions.push(
+        dashboard === "needs_attention"
+          ? `primary_event_tag = $${params.length}`
+          : `event_tags ? $${params.length}`,
+      );
     }
     conditions.push(`(${tagConditions.join(" or ")})`);
   }
@@ -429,6 +434,7 @@ export async function getThreadsForDashboard(
     title: string | null;
     card_header: string | null;
     event_tags: unknown;
+    primary_event_tag: string | null;
     is_urgent: boolean;
     review_state: string;
     reply_state: string;
@@ -448,6 +454,7 @@ export async function getThreadsForDashboard(
         coalesce(latest_subject, normalized_subject, '(No subject)') as title,
         coalesce(card_header, system_card_header) as card_header,
         event_tags,
+        primary_event_tag,
         is_urgent,
         review_state,
         reply_state,
@@ -556,6 +563,7 @@ export async function getThreadsForDashboard(
       title: row.title ?? "(No subject)",
       cardHeader: row.card_header,
       eventTags: normalizeStringArray(row.event_tags),
+      primaryEventTag: row.primary_event_tag,
       isUrgent: row.is_urgent,
       reviewState: row.review_state,
       replyState: row.reply_state,

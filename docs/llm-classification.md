@@ -29,6 +29,11 @@ The model prompt now pushes `summary` to include a lightweight stage judgment wh
 - likely a project already underway
 - unclear from the current thread
 
+The model also now prefers:
+
+- explicit dates in `M/D` form for headers and summaries when timing is knowable from the thread
+- up to a few `**bolded**` summary highlights for faster scanning in the dashboard
+
 Event tags are restricted to:
 
 - `deadline`

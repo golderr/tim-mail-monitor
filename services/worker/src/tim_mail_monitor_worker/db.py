@@ -1416,6 +1416,9 @@ def load_thread_classification_context(
         "thread_record_id": thread_record_id,
         "normalized_subject": thread["normalized_subject"],
         "latest_subject": thread["latest_subject"],
+        "latest_correspondence_at": thread["latest_correspondence_at"].isoformat()
+        if thread["latest_correspondence_at"]
+        else None,
         "client_display_name": thread["client_display_name"],
         "client_names": list(thread["client_names"] or []),
         "project_number": thread["project_number"],

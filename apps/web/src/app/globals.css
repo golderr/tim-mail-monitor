@@ -245,11 +245,16 @@ summary::-webkit-details-marker {
 
 .status-pill {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
   width: fit-content;
   border-radius: 999px;
-  padding: 6px 10px;
+  padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .status-pill--success {
@@ -391,6 +396,7 @@ summary::-webkit-details-marker {
 .thread-card__header {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 16px;
 }
 
@@ -443,6 +449,8 @@ summary::-webkit-details-marker {
 .thread-card__badges {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
   gap: 8px;
   justify-content: flex-end;
 }
@@ -450,6 +458,7 @@ summary::-webkit-details-marker {
 .thread-card__meta-grid {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
   color: var(--muted);
   font-size: 14px;
@@ -459,6 +468,11 @@ summary::-webkit-details-marker {
 .thread-card__snippet {
   color: var(--foreground);
   line-height: 1.6;
+}
+
+.thread-card__headline strong,
+.thread-card__snippet strong {
+  font-weight: 800;
 }
 
 .thread-card__details-panel {
@@ -575,14 +589,33 @@ summary::-webkit-details-marker {
 }
 
 .thread-card__urgent-toggle {
-  min-width: 72px;
-  justify-content: center;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  min-width: 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.thread-card__urgent-toggle--active {
+  color: var(--danger);
 }
 
 .thread-card__urgent-toggle--inactive {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--foreground);
+  color: var(--muted);
+}
+
+.thread-card__urgent-toggle:hover {
+  text-decoration: underline;
+}
+
+.thread-card__urgent-toggle:focus-visible {
+  outline: 2px solid #f2b9b9;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .filters-panel {

@@ -34,7 +34,7 @@ export default async function NeedsAttentionPage({
         </p>
       </header>
 
-      <section className="grid grid--three">
+      <section className="grid grid--two">
         <article className="metric-card">
           <span className="metric-card__label">Open Threads</span>
           <strong className="metric-card__value">{metrics.needsAttention}</strong>
@@ -47,14 +47,6 @@ export default async function NeedsAttentionPage({
           <strong className="metric-card__value">{metrics.urgentOpen}</strong>
           <p className="metric-card__copy">
             Open threads carrying at least one urgent event tag.
-          </p>
-        </article>
-        <article className="metric-card">
-          <span className="metric-card__label">Unanswered Open</span>
-          <strong className="metric-card__value">{metrics.unansweredOpen}</strong>
-          <p className="metric-card__copy">
-            Open threads whose latest substantive external message still lacks a
-            later reply.
           </p>
         </article>
       </section>

@@ -97,7 +97,7 @@ def get_settings() -> Settings:
         openai_reasoning_effort=_to_str(os.getenv("OPENAI_REASONING_EFFORT"), "low"),
         openai_text_verbosity=_to_str(os.getenv("OPENAI_TEXT_VERBOSITY"), "low"),
         classification_prompt_version=_to_str(
-            os.getenv("CLASSIFICATION_PROMPT_VERSION"), "thread-review-v3"
+            os.getenv("CLASSIFICATION_PROMPT_VERSION"), "thread-review-v4"
         ),
         classification_max_messages=int(
             os.getenv("CLASSIFICATION_MAX_MESSAGES", "8")

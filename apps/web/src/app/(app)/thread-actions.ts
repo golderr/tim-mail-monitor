@@ -161,6 +161,7 @@ export async function overrideThreadClassificationAction(formData: FormData) {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
+  const primaryEventTag = eventTags[0] ?? null;
   const isUrgent = urgency === "urgent";
 
   await withClient(async (client) => {
@@ -171,6 +172,8 @@ export async function overrideThreadClassificationAction(formData: FormData) {
         latest_classification_id: string | null;
         system_event_tags: string[];
         event_tags: string[];
+        system_primary_event_tag: string | null;
+        primary_event_tag: string | null;
         system_promotion_state: string;
         promotion_state: string;
         system_reply_state: string;
@@ -187,6 +190,8 @@ export async function overrideThreadClassificationAction(formData: FormData) {
             latest_classification_id::text,
             system_event_tags,
             event_tags,
+            system_primary_event_tag,
+            primary_event_tag,
             system_promotion_state,
             promotion_state,
             system_reply_state,
@@ -213,16 +218,17 @@ export async function overrideThreadClassificationAction(formData: FormData) {
         `
           update public.thread_records
           set event_tags = $2::jsonb,
+              primary_event_tag = $3,
               event_tags_overridden = true,
-              promotion_state = $3,
+              promotion_state = $4,
               promotion_state_overridden = true,
-              reply_state = $4,
+              reply_state = $5,
               reply_state_overridden = true,
-              is_urgent = $5,
+              is_urgent = $6,
               urgency_overridden = true,
-              card_header = $6,
+              card_header = $7,
               card_header_overridden = true,
-              summary = $7,
+              summary = $8,
               summary_overridden = true,
               has_human_overrides = true,
               state_last_changed_at = timezone('utc', now()),
@@ -232,6 +238,7 @@ export async function overrideThreadClassificationAction(formData: FormData) {
         [
           threadId,
           JSON.stringify(eventTags),
+          primaryEventTag,
           promotionState,
           replyState,
           isUrgent,
@@ -245,6 +252,11 @@ export async function overrideThreadClassificationAction(formData: FormData) {
           fieldName: "event_tags",
           systemValue: currentRow.system_event_tags,
           effectiveValue: eventTags,
+        },
+        {
+          fieldName: "primary_event_tag",
+          systemValue: currentRow.system_primary_event_tag,
+          effectiveValue: primaryEventTag,
         },
         {
           fieldName: "promotion_state",
