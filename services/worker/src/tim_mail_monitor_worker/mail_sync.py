@@ -29,6 +29,13 @@ from tim_mail_monitor_worker.thread_state_updater import classify_threads
 from tim_mail_monitor_worker.thread_builder import build_thread_key
 
 
+def _message_has_external_participants(message) -> bool:
+    if message.sender_is_external:
+        return True
+
+    return any(recipient.is_external for recipient in message.recipients)
+
+
 def sync_mailbox(
     *,
     mailbox_address: str | None = None,
@@ -116,6 +123,8 @@ def sync_mailbox(
                     internal_domains=internal_domains,
                     attachments_payload=attachments_payload,
                 )
+                if not _message_has_external_participants(normalized_message):
+                    continue
                 normalized_message = replace(
                     normalized_message,
                     thread_key=build_thread_key(normalized_message),
