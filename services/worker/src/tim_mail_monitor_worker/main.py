@@ -146,6 +146,13 @@ def main() -> None:
             touched_thread_ids: set[str] = set()
             event_count = 0
             for row in message_rows:
+                sender_email = row["sender_email"]
+                sender_domain = (
+                    sender_email.split("@", 1)[1].strip().lower()
+                    if sender_email and "@" in sender_email
+                    else None
+                )
+                sender_is_internal = bool(sender_domain and sender_domain in internal_domains)
                 normalized_message = NormalizedMessage(
                     graph_message_id=row["graph_message_id"],
                     internet_message_id=row["internet_message_id"],
@@ -155,8 +162,13 @@ def main() -> None:
                     parent_folder_id=row["parent_folder_id"],
                     folder_name=row["folder_name"],
                     direction=row["direction"],
-                    sender_email=row["sender_email"],
+                    sender_email=sender_email,
                     sender_name=None,
+                    sender_is_internal=sender_is_internal,
+                    sender_is_external=bool(sender_domain and not sender_is_internal),
+                    sender_matched_internal_domain=(
+                        sender_domain if sender_is_internal else None
+                    ),
                     subject=row["subject"],
                     normalized_subject=row["normalized_subject"],
                     body_preview=row["body_preview"],

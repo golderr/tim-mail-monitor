@@ -42,6 +42,9 @@ class NormalizedMessage:
     direction: str
     sender_email: str | None
     sender_name: str | None
+    sender_is_internal: bool
+    sender_is_external: bool
+    sender_matched_internal_domain: str | None
     subject: str | None
     normalized_subject: str | None
     body_preview: str | None

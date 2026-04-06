@@ -8,6 +8,7 @@ import { AdminThreadOverrideForm } from "@/components/admin-thread-override-form
 import type {
   DashboardName,
   DashboardThread,
+  InternalParticipant,
   ThreadMessage,
 } from "@/lib/dashboard-data";
 
@@ -266,6 +267,31 @@ function renderSummaryText(
   return renderBoldMarkers(highlighted);
 }
 
+function renderInternalParticipants(
+  participants: InternalParticipant[],
+  variant: "current" | "historical",
+) {
+  return participants.map((participant, index) => (
+    <Fragment key={`${variant}-${participant.email || participant.label}`}>
+      {index > 0 ? ", " : null}
+      <span
+        className={
+          variant === "historical"
+            ? "thread-card__internal-participant thread-card__internal-participant--historical"
+            : "thread-card__internal-participant"
+        }
+        title={
+          variant === "historical"
+            ? "Previously on thread, not on latest message"
+            : participant.displayName || participant.email || undefined
+        }
+      >
+        {participant.label}
+      </span>
+    </Fragment>
+  ));
+}
+
 export function ThreadList({
   items,
   emptyMessage,
@@ -309,6 +335,9 @@ export function ThreadList({
           .map((tag) => EVENT_LABELS[tag] ?? tag)
           .join(", ");
         const showReviewState = !(dashboard === "needs_attention" && item.reviewState === "open");
+        const hasInternalParticipants =
+          item.internalParticipantsCurrent.length > 0 ||
+          item.internalParticipantsHistorical.length > 0;
 
         return (
           <article className="thread-card" key={item.id}>
@@ -324,9 +353,21 @@ export function ThreadList({
                     ? item.externalCorrespondents.join(", ")
                     : "No external names identified"}
                 </p>
-                {item.internalParticipants.length > 0 ? (
+                {hasInternalParticipants ? (
                   <p className="thread-card__internal">
-                    TCG: {item.internalParticipants.join(", ")}
+                    <span className="thread-card__internal-label">TCG:</span>{" "}
+                    {renderInternalParticipants(
+                      item.internalParticipantsCurrent,
+                      "current",
+                    )}
+                    {item.internalParticipantsCurrent.length > 0 &&
+                    item.internalParticipantsHistorical.length > 0
+                      ? ", "
+                      : null}
+                    {renderInternalParticipants(
+                      item.internalParticipantsHistorical,
+                      "historical",
+                    )}
                   </p>
                 ) : null}
                 <h2>{item.title}</h2>
@@ -352,6 +393,11 @@ export function ThreadList({
                     title={hiddenTagsLabel}
                   >
                     +{remainingTagCount} more
+                  </span>
+                ) : null}
+                {item.noConsultingStaffAttached ? (
+                  <span className="status-pill status-pill--warning">
+                    No Consulting Staff
                   </span>
                 ) : null}
                 {showReviewState ? (

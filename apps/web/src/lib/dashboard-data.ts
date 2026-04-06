@@ -47,8 +47,18 @@ export type ThreadMessage = {
   bodyText: string | null;
   senderName: string | null;
   senderEmail: string | null;
+  senderIsInternal: boolean;
+  senderIsExternal: boolean;
   timestamp: string | null;
   recipients: ThreadRecipient[];
+};
+
+export type InternalParticipant = {
+  email: string;
+  displayName: string | null;
+  label: string;
+  isOnLatestMessage: boolean;
+  lastSeenAt: string | null;
 };
 
 export type DashboardThread = {
@@ -56,12 +66,14 @@ export type DashboardThread = {
   clientDisplayName: string | null;
   clientNames: string[];
   externalCorrespondents: string[];
-  internalParticipants: string[];
+  internalParticipantsCurrent: InternalParticipant[];
+  internalParticipantsHistorical: InternalParticipant[];
   title: string;
   cardHeader: string | null;
   eventTags: string[];
   primaryEventTag: string | null;
   isUrgent: boolean;
+  noConsultingStaffAttached: boolean;
   reviewState: string;
   replyState: string;
   projectNumber: string | null;
@@ -132,6 +144,8 @@ function normalizeMessages(value: Array<Record<string, unknown>>): ThreadMessage
     senderName: typeof message.sender_name === "string" ? message.sender_name : null,
     senderEmail:
       typeof message.sender_email === "string" ? message.sender_email : null,
+    senderIsInternal: message.sender_is_internal === true,
+    senderIsExternal: message.sender_is_external === true,
     timestamp: typeof message.message_timestamp === "string" ? message.message_timestamp : null,
     recipients: normalizeRecipients(message.recipients),
   }));
@@ -312,11 +326,15 @@ function labelParticipant(displayName: string | null, email: string | null) {
   return displayName || email || "Unknown";
 }
 
+function labelInternalParticipant(displayName: string | null, email: string | null) {
+  return email || displayName || "Unknown";
+}
+
 function deriveParticipants(messages: ThreadMessage[]) {
   const external: string[] = [];
   const externalSeen = new Set<string>();
-  const internal: string[] = [];
-  const internalSeen = new Set<string>();
+  const internalParticipants = new Map<string, InternalParticipant>();
+  const latestMessageId = messages[0]?.id;
 
   const add = (list: string[], seen: Set<string>, value: string | null) => {
     if (!value) {
@@ -334,23 +352,47 @@ function deriveParticipants(messages: ThreadMessage[]) {
     list.push(normalized);
   };
 
-  for (const message of [...messages].reverse()) {
-    const senderEmail = message.senderEmail?.trim().toLowerCase() ?? "";
-    const senderIsExternal =
-      Boolean(senderEmail) && !senderEmail.endsWith("@theconcordgroup.com");
+  const addInternal = (
+    message: ThreadMessage,
+    displayName: string | null,
+    email: string | null,
+  ) => {
+    const normalizedEmail = email?.trim().toLowerCase();
+    const label = labelInternalParticipant(displayName, email);
+    const key = normalizedEmail || label.toLowerCase();
+    if (!key) {
+      return;
+    }
 
-    if (senderIsExternal) {
+    const existing = internalParticipants.get(key);
+    if (existing) {
+      internalParticipants.set(key, {
+        ...existing,
+        isOnLatestMessage: existing.isOnLatestMessage || message.id === latestMessageId,
+      });
+      return;
+    }
+
+    internalParticipants.set(key, {
+      email: email?.trim() ?? "",
+      displayName,
+      label,
+      isOnLatestMessage: message.id === latestMessageId,
+      lastSeenAt: message.timestamp,
+    });
+  };
+
+  for (const message of messages) {
+    if (message.senderIsExternal) {
       add(
         external,
         externalSeen,
         labelParticipant(message.senderName, message.senderEmail),
       );
-    } else {
-      add(
-        internal,
-        internalSeen,
-        labelParticipant(message.senderName, message.senderEmail),
-      );
+    }
+
+    if (message.senderIsInternal) {
+      addInternal(message, message.senderName, message.senderEmail);
     }
 
     for (const recipient of message.recipients) {
@@ -359,14 +401,25 @@ function deriveParticipants(messages: ThreadMessage[]) {
         add(external, externalSeen, label);
       }
       if (recipient.isInternal) {
-        add(internal, internalSeen, label);
+        addInternal(message, recipient.displayName, recipient.email);
       }
+    }
+  }
+
+  const internalParticipantsCurrent: InternalParticipant[] = [];
+  const internalParticipantsHistorical: InternalParticipant[] = [];
+  for (const participant of internalParticipants.values()) {
+    if (participant.isOnLatestMessage) {
+      internalParticipantsCurrent.push(participant);
+    } else {
+      internalParticipantsHistorical.push(participant);
     }
   }
 
   return {
     externalCorrespondents: external,
-    internalParticipants: internal,
+    internalParticipantsCurrent,
+    internalParticipantsHistorical,
   };
 }
 
@@ -452,6 +505,7 @@ export async function getThreadsForDashboard(
     summary: string | null;
     promotion_state: string;
     has_human_overrides: boolean;
+    no_consulting_staff_attached: boolean;
     message_count: number;
   }>(
     `
@@ -472,6 +526,7 @@ export async function getThreadsForDashboard(
         coalesce(summary, system_summary, latest_snippet) as summary,
         promotion_state,
         has_human_overrides,
+        no_consulting_staff_attached,
         message_count
       from public.thread_records
       ${whereClause}
@@ -492,6 +547,8 @@ export async function getThreadsForDashboard(
     direction: "sent" | "received";
     sender_name: string | null;
     sender_email: string | null;
+    sender_is_internal: boolean;
+    sender_is_external: boolean;
     subject: string | null;
     body_text: string | null;
     message_timestamp: string | null;
@@ -504,6 +561,8 @@ export async function getThreadsForDashboard(
         case when m.direction = 'outbound' then 'sent' else 'received' end as direction,
         m.sender_name,
         m.sender_email::text,
+        m.sender_is_internal,
+        m.sender_is_external,
         m.subject,
         coalesce(nullif(m.body_text, ''), m.body_preview) as body_text,
         coalesce(m.received_at, m.sent_at, m.created_at_graph)::text as message_timestamp,
@@ -546,6 +605,8 @@ export async function getThreadsForDashboard(
         direction: row.direction,
         sender_name: row.sender_name,
         sender_email: row.sender_email,
+        sender_is_internal: row.sender_is_internal,
+        sender_is_external: row.sender_is_external,
         subject: row.subject,
         body_text: row.body_text,
         message_timestamp: row.message_timestamp,
@@ -559,7 +620,11 @@ export async function getThreadsForDashboard(
 
   return rows.map((row) => {
     const messages = messageMap.get(row.id) ?? [];
-    const { externalCorrespondents, internalParticipants } =
+    const {
+      externalCorrespondents,
+      internalParticipantsCurrent,
+      internalParticipantsHistorical,
+    } =
       deriveParticipants(messages);
 
     return {
@@ -567,12 +632,14 @@ export async function getThreadsForDashboard(
       clientDisplayName: row.client_display_name,
       clientNames: normalizeStringArray(row.client_names),
       externalCorrespondents,
-      internalParticipants,
+      internalParticipantsCurrent,
+      internalParticipantsHistorical,
       title: row.title ?? "(No subject)",
       cardHeader: row.card_header,
       eventTags: normalizeStringArray(row.event_tags),
       primaryEventTag: row.primary_event_tag,
       isUrgent: row.is_urgent,
+      noConsultingStaffAttached: row.no_consulting_staff_attached,
       reviewState: row.review_state,
       replyState: row.reply_state,
       projectNumber: row.project_number,

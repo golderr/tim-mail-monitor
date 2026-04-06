@@ -105,6 +105,11 @@ def normalize_graph_message(
     attachments_payload: list[dict[str, Any]],
 ) -> NormalizedMessage:
     sender_email, sender_name = _extract_email_address(raw_message.get("from"))
+    (
+        sender_is_internal,
+        sender_is_external,
+        sender_matched_internal_domain,
+    ) = _classify_email(sender_email, internal_domains)
     body = raw_message.get("body") or {}
     body_content = body.get("content")
     body_content_type = body.get("contentType")
@@ -152,6 +157,9 @@ def normalize_graph_message(
         direction="outbound" if folder_name == "SentItems" else "inbound",
         sender_email=sender_email,
         sender_name=sender_name,
+        sender_is_internal=sender_is_internal,
+        sender_is_external=sender_is_external,
+        sender_matched_internal_domain=sender_matched_internal_domain,
         subject=raw_message.get("subject"),
         normalized_subject=normalize_subject(raw_message.get("subject")),
         body_preview=raw_message.get("bodyPreview"),

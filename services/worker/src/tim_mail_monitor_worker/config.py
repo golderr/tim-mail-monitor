@@ -10,11 +10,28 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_NON_CONSULTING_INTERNAL_EMAILS = (
+    "tmc@theconcordgroup.com",
+    "ccr@theconcordgroup.com",
+    "rmg@theconcordgroup.com",
+    "mdr@theconcordgroup.com",
+    "aot@theconcordgroup.com",
+    "tjm@theconcordgroup.com",
+    "aes@theconcordgroup.com",
+)
+
 def _to_list(value: str | None) -> tuple[str, ...]:
     if not value:
         return ()
 
     return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def _to_lower_list(value: str | None) -> tuple[str, ...]:
+    if not value:
+        return ()
+
+    return tuple(item.strip().lower() for item in value.split(",") if item.strip())
 
 
 def _to_str(value: str | None, default: str = "") -> str:
@@ -46,6 +63,7 @@ class Settings:
     sync_lookback_days: int
     sync_overlap_minutes: int
     sync_max_messages_per_folder: int
+    non_consulting_internal_emails: tuple[str, ...]
     openai_api_key: str
     openai_base_url: str
     openai_model: str
@@ -89,6 +107,10 @@ def get_settings() -> Settings:
         sync_max_messages_per_folder=int(
             os.getenv("SYNC_MAX_MESSAGES_PER_FOLDER", "200")
         ),
+        non_consulting_internal_emails=_to_lower_list(
+            os.getenv("NON_CONSULTING_INTERNAL_EMAILS")
+        )
+        or DEFAULT_NON_CONSULTING_INTERNAL_EMAILS,
         openai_api_key=_to_str(os.getenv("OPENAI_API_KEY")),
         openai_base_url=_to_str(
             os.getenv("OPENAI_BASE_URL"), "https://api.openai.com/v1"

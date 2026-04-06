@@ -425,6 +425,14 @@ summary::-webkit-details-marker {
   line-height: 1.5;
 }
 
+.thread-card__internal-label {
+  font-weight: 700;
+}
+
+.thread-card__internal-participant--historical {
+  color: #8d99ab;
+}
+
 .thread-card__header h2 {
   font-size: 19px;
   line-height: 1.25;

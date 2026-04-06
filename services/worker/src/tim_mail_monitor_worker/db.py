@@ -11,7 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from tim_mail_monitor_worker.config import Settings
+from tim_mail_monitor_worker.config import Settings, get_settings
 from tim_mail_monitor_worker.event_detector import RULE_VERSION, URGENT_EVENT_TYPES
 from tim_mail_monitor_worker.models import (
     NormalizedAttachment,
@@ -56,6 +56,7 @@ TRACKED_HISTORY_FIELDS = (
     "project_number",
     "correspondent_display_name",
     "latest_correspondence_direction",
+    "no_consulting_staff_attached",
     "system_card_header",
     "card_header",
     "system_summary",
@@ -341,6 +342,9 @@ def upsert_message(
         message.direction,
         message.sender_email,
         message.sender_name,
+        message.sender_is_internal,
+        message.sender_is_external,
+        message.sender_matched_internal_domain,
         message.subject,
         message.normalized_subject,
         message.body_preview,
@@ -375,6 +379,9 @@ def upsert_message(
               direction,
               sender_email,
               sender_name,
+              sender_is_internal,
+              sender_is_external,
+              sender_matched_internal_domain,
               subject,
               normalized_subject,
               body_preview,
@@ -396,7 +403,8 @@ def upsert_message(
             values (
               %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
               %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-              %s, %s, %s, %s, %s, %s, %s, %s
+              %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+              %s
             )
             on conflict (mailbox_config_id, graph_message_id) do nothing
             returning id
@@ -419,6 +427,9 @@ def upsert_message(
                 direction = %s,
                 sender_email = %s,
                 sender_name = %s,
+                sender_is_internal = %s,
+                sender_is_external = %s,
+                sender_matched_internal_domain = %s,
                 subject = %s,
                 normalized_subject = %s,
                 body_preview = %s,
@@ -451,6 +462,9 @@ def upsert_message(
                 message.direction,
                 message.sender_email,
                 message.sender_name,
+                message.sender_is_internal,
+                message.sender_is_external,
+                message.sender_matched_internal_domain,
                 message.subject,
                 message.normalized_subject,
                 message.body_preview,
@@ -672,6 +686,58 @@ def _normalize_whitespace(value: str | None) -> str | None:
     return normalized[:280] if normalized else None
 
 
+def _normalize_email(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    normalized = value.strip().lower()
+    return normalized or None
+
+
+def _collect_internal_thread_emails(
+    messages: list[dict[str, Any]],
+    *,
+    recipient_map: dict[str, list[dict[str, Any]]],
+    internal_domains: set[str],
+) -> set[str]:
+    internal_emails: set[str] = set()
+
+    for message in messages:
+        sender_email = _normalize_email(message["sender_email"])
+        if sender_email and (
+            message.get("sender_is_internal") is True
+            or _is_internal_email(sender_email, internal_domains)
+        ):
+            internal_emails.add(sender_email)
+
+        for recipient in recipient_map.get(message["id"], []):
+            recipient_email = _normalize_email(recipient["email"])
+            if recipient_email and recipient["is_internal"]:
+                internal_emails.add(recipient_email)
+
+    return internal_emails
+
+
+def _derive_no_consulting_staff_attached(
+    messages: list[dict[str, Any]],
+    *,
+    recipient_map: dict[str, list[dict[str, Any]]],
+    internal_domains: set[str],
+    non_consulting_internal_emails: set[str],
+) -> bool:
+    if not non_consulting_internal_emails:
+        return False
+
+    internal_emails = _collect_internal_thread_emails(
+        messages,
+        recipient_map=recipient_map,
+        internal_domains=internal_domains,
+    )
+    return bool(internal_emails) and internal_emails.issubset(
+        non_consulting_internal_emails
+    )
+
+
 def _domain_to_company_label(domain: str) -> str:
     host = domain.split(".", 1)[0].replace("-", " ").replace("_", " ")
     parts = [part for part in host.split() if part]
@@ -863,6 +929,8 @@ def _load_thread_messages(
               m.direction,
               m.sender_email::text as sender_email,
               m.sender_name,
+              m.sender_is_internal,
+              m.sender_is_external,
               m.subject,
               m.normalized_subject,
               m.body_preview,
@@ -957,6 +1025,7 @@ def _load_thread_record(
               tr.correspondent_display_name,
               tr.correspondent_email::text as correspondent_email,
               tr.latest_correspondence_direction,
+              tr.no_consulting_staff_attached,
               tr.project_number,
               tr.latest_snippet,
               tr.system_card_header,
@@ -1064,6 +1133,7 @@ def refresh_thread_record(
     internal_domains = get_internal_domains(
         conn, mailbox_address=previous_state["mailbox_address"]
     )
+    non_consulting_internal_emails = set(get_settings().non_consulting_internal_emails)
 
     now = utc_now()
     first_message_at = messages[-1]["message_timestamp"]
@@ -1098,6 +1168,12 @@ def refresh_thread_record(
             for recipient in recipient_map.get(message["id"], [])
         )
         for message in messages
+    )
+    no_consulting_staff_attached = _derive_no_consulting_staff_attached(
+        messages,
+        recipient_map=recipient_map,
+        internal_domains=internal_domains,
+        non_consulting_internal_emails=non_consulting_internal_emails,
     )
 
     system_event_tags = _sorted_event_tags(events)
@@ -1205,6 +1281,7 @@ def refresh_thread_record(
         "project_number": project_number,
         "correspondent_display_name": correspondent_display_name,
         "latest_correspondence_direction": latest_correspondence_direction,
+        "no_consulting_staff_attached": no_consulting_staff_attached,
     }
     state_last_changed_at = previous_state["state_last_changed_at"] or now
     if any(
@@ -1245,6 +1322,7 @@ def refresh_thread_record(
                 correspondent_display_name = %s,
                 correspondent_email = %s,
                 latest_correspondence_direction = %s,
+                no_consulting_staff_attached = %s,
                 project_number = %s,
                 latest_snippet = %s,
                 system_event_tags = %s,
@@ -1294,6 +1372,7 @@ def refresh_thread_record(
                 correspondent_display_name,
                 correspondent_email,
                 latest_correspondence_direction,
+                no_consulting_staff_attached,
                 project_number,
                 latest_snippet,
                 Jsonb(system_event_tags),
@@ -1689,6 +1768,7 @@ def apply_thread_classification_result(
         "project_number": previous_state["project_number"],
         "correspondent_display_name": previous_state["correspondent_display_name"],
         "latest_correspondence_direction": previous_state["latest_correspondence_direction"],
+        "no_consulting_staff_attached": previous_state["no_consulting_staff_attached"],
         "system_card_header": card_header,
         "card_header": effective_card_header,
     }
