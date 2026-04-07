@@ -17,6 +17,7 @@ const REVIEW_STATE_LABELS: Record<string, string> = {
   open: "Open",
   handled: "Handled",
   disregard: "Disregard",
+  expired: "Expired",
 };
 
 const REPLY_STATE_LABELS: Record<string, string> = {

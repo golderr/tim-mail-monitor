@@ -27,7 +27,7 @@ export default async function ClosedPage({
     <div className="content__inner">
       <header className="page-header">
         <span className="page-header__eyebrow">Closed</span>
-        <h1>Previously active threads that were handled or disregarded</h1>
+        <h1>Previously active threads that were handled, disregarded, or expired</h1>
         <p>
           Closed is strictly for threads that were opened at some point and then
           moved out of the active queue.
@@ -39,7 +39,7 @@ export default async function ClosedPage({
           <span className="metric-card__label">Closed Threads</span>
           <strong className="metric-card__value">{metrics.closed}</strong>
           <p className="metric-card__copy">
-            Threads with review_state handled or disregard after ever being open.
+            Threads with review_state handled, disregard, or expired after ever being open.
           </p>
         </article>
         <article className="metric-card">

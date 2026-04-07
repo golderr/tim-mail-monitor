@@ -31,7 +31,7 @@ export type DashboardFilters = {
   dateTo?: string;
   sort?: "priority" | "latest_desc" | "latest_asc";
   promotionState?: "promoted" | "not_promoted";
-  reviewState?: "open" | "handled" | "disregard";
+  reviewState?: "open" | "handled" | "disregard" | "expired";
   hasOverrides?: "yes" | "no";
   noConsultingStaff?: "yes" | "no";
 };
@@ -231,7 +231,7 @@ function buildDashboardWhereClause(
       break;
     case "closed":
       conditions.push("first_opened_at is not null");
-      conditions.push("review_state in ('handled', 'disregard')");
+      conditions.push("review_state in ('handled', 'disregard', 'expired')");
       break;
     case "not_promoted":
       conditions.push("promotion_state = 'not_promoted'");
@@ -278,7 +278,7 @@ function buildDashboardWhereClause(
 
   if (filters.dateFrom) {
     params.push(filters.dateFrom);
-    conditions.push(`latest_correspondence_at >= $${params.length}::date`);
+    conditions.push(`latest_correspondence_at >= $${params.length}::timestamptz`);
   }
 
   if (filters.dateTo) {
@@ -462,7 +462,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
         count(*) filter (where review_state = 'open')::text as needs_attention,
         count(*) filter (
           where first_opened_at is not null
-            and review_state in ('handled', 'disregard')
+            and review_state in ('handled', 'disregard', 'expired')
         )::text as closed,
         count(*) filter (
           where promotion_state = 'not_promoted'

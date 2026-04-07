@@ -44,7 +44,9 @@ export default async function AdminPage({
         <article className="metric-card">
           <span className="metric-card__label">Closed</span>
           <strong className="metric-card__value">{metrics.closed}</strong>
-          <p className="metric-card__copy">Previously active threads now closed.</p>
+          <p className="metric-card__copy">
+            Previously active threads now handled, disregarded, or expired.
+          </p>
         </article>
         <article className="metric-card">
           <span className="metric-card__label">Latest Sync</span>

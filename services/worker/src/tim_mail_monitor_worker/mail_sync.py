@@ -11,6 +11,7 @@ from tim_mail_monitor_worker.db import (
     SyncCounters,
     complete_sync_run,
     connect_db,
+    expire_stale_open_threads,
     create_sync_run,
     ensure_mailbox_config,
     fail_running_sync_runs,
@@ -180,6 +181,7 @@ def sync_mailbox(
 
         for thread_record_id in touched_thread_ids:
             refresh_thread_record(conn, thread_record_id=thread_record_id)
+        expire_stale_open_threads(conn)
 
         classification_summary = classify_threads(
             conn,

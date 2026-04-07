@@ -13,6 +13,7 @@ from tim_mail_monitor_worker.health import get_health_payload
 from tim_mail_monitor_worker.mail_sync import sync_mailbox
 from tim_mail_monitor_worker.db import (
     connect_db,
+    expire_stale_open_threads,
     get_internal_domains,
     iter_messages_for_trigger_backfill,
     refresh_thread_record,
@@ -203,6 +204,7 @@ def main() -> None:
 
             for thread_id in touched_thread_ids:
                 refresh_thread_record(conn, thread_record_id=thread_id)
+            expire_stale_open_threads(conn)
             conn.commit()
             pprint(
                 {

@@ -10,13 +10,13 @@ import {
 } from "@/lib/thread-flags";
 
 const DATE_WINDOWS = [
+  { label: "Last 24 Hours", hours: 24 },
+  { label: "Last 3 Days", hours: 72 },
   { label: "Last 7 days", days: 7 },
-  { label: "Last 14 days", days: 14 },
-  { label: "Last 30 days", days: 30 },
 ] as const;
 
-function formatDateInput(date: Date) {
-  return date.toISOString().slice(0, 10);
+function formatDateFilterInput(date: Date) {
+  return date.toISOString();
 }
 
 export function DashboardFiltersPanel({
@@ -174,6 +174,7 @@ export function DashboardFiltersPanel({
                 <option value="open">Open</option>
                 <option value="handled">Handled</option>
                 <option value="disregard">Disregard</option>
+                <option value="expired">Expired</option>
               </select>
             </label>
           </>
@@ -244,12 +245,16 @@ export function DashboardFiltersPanel({
           {DATE_WINDOWS.map((windowOption) => (
             <button
               className="text-link-button"
-              key={windowOption.days}
+              key={windowOption.label}
               onClick={() => {
                 const fromDate = new Date();
-                fromDate.setDate(fromDate.getDate() - windowOption.days);
+                if ("hours" in windowOption) {
+                  fromDate.setHours(fromDate.getHours() - windowOption.hours);
+                } else {
+                  fromDate.setDate(fromDate.getDate() - windowOption.days);
+                }
                 updateQuery({
-                  dateFrom: formatDateInput(fromDate),
+                  dateFrom: formatDateFilterInput(fromDate),
                   dateTo: undefined,
                 });
               }}

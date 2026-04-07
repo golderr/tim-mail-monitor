@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import psycopg
@@ -62,6 +62,7 @@ TRACKED_HISTORY_FIELDS = (
     "system_summary",
     "summary",
 )
+OPEN_THREAD_EXPIRATION_WINDOW = timedelta(days=14)
 
 
 @dataclass(frozen=True)
@@ -694,6 +695,35 @@ def _normalize_email(value: str | None) -> str | None:
     return normalized or None
 
 
+def _derive_attention_required_at(
+    *,
+    last_message_at: datetime | None,
+    last_external_inbound_at: datetime | None,
+    latest_triggered_at: datetime | None,
+    first_opened_at: datetime | None,
+) -> datetime | None:
+    attention_candidates = [
+        candidate
+        for candidate in (last_external_inbound_at, latest_triggered_at)
+        if candidate is not None
+    ]
+    if attention_candidates:
+        return max(attention_candidates)
+
+    return last_message_at or first_opened_at
+
+
+def _should_expire_open_thread(
+    *,
+    attention_required_at: datetime | None,
+    now: datetime,
+) -> bool:
+    if attention_required_at is None:
+        return False
+
+    return attention_required_at < now - OPEN_THREAD_EXPIRATION_WINDOW
+
+
 def _collect_internal_thread_emails(
     messages: list[dict[str, Any]],
     *,
@@ -1019,6 +1049,7 @@ def _load_thread_record(
               tr.current_state,
               tr.current_attention_state,
               tr.latest_correspondence_at,
+              tr.last_external_inbound_at,
               tr.client_display_name,
               tr.client_names,
               tr.client_display_email::text as client_display_email,
@@ -1053,6 +1084,7 @@ def _load_thread_record(
               tr.review_state,
               tr.first_opened_at,
               tr.last_reviewed_at,
+              tr.latest_triggered_at,
               tr.state_last_changed_at,
               tr.has_human_overrides,
               tr.event_tags_overridden,
@@ -1237,6 +1269,14 @@ def refresh_thread_record(
     first_opened_at = previous_state["first_opened_at"]
     review_state = previous_state["review_state"] or "disregard"
     last_reviewed_at = previous_state["last_reviewed_at"]
+    trigger_count = len(events)
+    latest_triggered_at = events[0]["event_timestamp"] if events else None
+    attention_required_at = _derive_attention_required_at(
+        last_message_at=last_message_at,
+        last_external_inbound_at=last_external_inbound_at,
+        latest_triggered_at=latest_triggered_at,
+        first_opened_at=first_opened_at,
+    )
 
     if first_opened_at is None:
         if effective_promotion_state == "promoted":
@@ -1245,22 +1285,39 @@ def refresh_thread_record(
             last_reviewed_at = now
         else:
             review_state = "disregard"
-    elif review_state not in {"open", "handled", "disregard"}:
-        review_state = "open"
+    else:
+        if review_state not in {"open", "handled", "disregard", "expired"}:
+            review_state = "open"
+
+        if review_state in {"handled", "disregard"}:
+            pass
+        elif _should_expire_open_thread(
+            attention_required_at=attention_required_at,
+            now=now,
+        ):
+            if review_state != "expired":
+                last_reviewed_at = now
+            review_state = "expired"
+        else:
+            review_state = "open"
 
     current_attention_state = (
         "action_needed"
         if review_state == "open"
         else "handled"
         if review_state == "handled"
+        else "expired"
+        if review_state == "expired"
         else "dismissed"
     )
     dashboard_status = "working" if review_state == "open" else "hidden"
     dashboard_reason = (
-        effective_primary_event_tag if effective_promotion_state == "promoted" else None
+        effective_primary_event_tag
+        if review_state == "open" and effective_promotion_state == "promoted"
+        else "expired"
+        if review_state == "expired"
+        else None
     )
-    trigger_count = len(events)
-    latest_triggered_at = events[0]["event_timestamp"] if events else None
 
     next_state = {
         "system_event_tags": system_event_tags,
@@ -1405,6 +1462,111 @@ def refresh_thread_record(
                 thread_record_id,
             ),
         )
+
+
+def expire_stale_open_threads(
+    conn: psycopg.Connection[Any],
+    *,
+    now: datetime | None = None,
+) -> int:
+    evaluation_time = now or utc_now()
+    cutoff = evaluation_time - OPEN_THREAD_EXPIRATION_WINDOW
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select id::text
+            from public.thread_records
+            where review_state = 'open'
+              and has_external_participants = true
+              and coalesce(
+                case
+                  when last_external_inbound_at is not null
+                    and latest_triggered_at is not null
+                    then greatest(last_external_inbound_at, latest_triggered_at)
+                  else coalesce(last_external_inbound_at, latest_triggered_at)
+                end,
+                latest_correspondence_at,
+                last_message_at,
+                first_opened_at
+              ) < %s
+            """,
+            (cutoff,),
+        )
+        thread_ids = [str(row["id"]) for row in cur.fetchall()]
+
+    for thread_id in thread_ids:
+        previous_state = _load_thread_record(conn, thread_record_id=thread_id)
+        if previous_state["review_state"] != "open":
+            continue
+
+        next_state = {
+            "system_event_tags": list(previous_state["system_event_tags"] or []),
+            "event_tags": list(previous_state["event_tags"] or []),
+            "system_primary_event_tag": previous_state["system_primary_event_tag"],
+            "primary_event_tag": previous_state["primary_event_tag"],
+            "system_promotion_state": previous_state["system_promotion_state"],
+            "promotion_state": previous_state["promotion_state"],
+            "system_reply_state": previous_state["system_reply_state"],
+            "reply_state": previous_state["reply_state"],
+            "system_is_urgent": previous_state["system_is_urgent"],
+            "is_urgent": previous_state["is_urgent"],
+            "review_state": "expired",
+            "first_opened_at": previous_state["first_opened_at"],
+            "latest_correspondence_at": previous_state["latest_correspondence_at"],
+            "client_display_name": previous_state["client_display_name"],
+            "client_names": list(previous_state["client_names"] or []),
+            "project_number": previous_state["project_number"],
+            "correspondent_display_name": previous_state["correspondent_display_name"],
+            "latest_correspondence_direction": previous_state[
+                "latest_correspondence_direction"
+            ],
+            "no_consulting_staff_attached": previous_state[
+                "no_consulting_staff_attached"
+            ],
+            "system_card_header": previous_state["system_card_header"],
+            "card_header": previous_state["card_header"],
+            "system_summary": previous_state["system_summary"],
+            "summary": previous_state["summary"],
+        }
+
+        _insert_state_history(
+            conn,
+            thread_record_id=thread_id,
+            previous_state={
+                **previous_state,
+                "system_event_tags": list(previous_state["system_event_tags"] or []),
+                "event_tags": list(previous_state["event_tags"] or []),
+            },
+            next_state=next_state,
+        )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                update public.thread_records
+                set review_state = 'expired',
+                    last_reviewed_at = %s,
+                    state_last_changed_at = %s,
+                    state_decision_source = 'rule',
+                    state_decision_version = %s,
+                    current_attention_state = 'expired',
+                    dashboard_status = 'hidden',
+                    dashboard_reason = 'expired',
+                    dashboard_last_evaluated_at = %s,
+                    updated_at = timezone('utc', now())
+                where id = %s
+                """,
+                (
+                    evaluation_time,
+                    evaluation_time,
+                    RULE_VERSION,
+                    evaluation_time,
+                    thread_id,
+                ),
+            )
+
+    return len(thread_ids)
 
 
 def iter_thread_ids_for_classification(
@@ -1762,6 +1924,7 @@ def apply_thread_classification_result(
     )
     review_state = previous_state["review_state"]
     first_opened_at = previous_state["first_opened_at"]
+    last_reviewed_at = previous_state["last_reviewed_at"]
     if previous_state["latest_classification_id"] is None:
         if effective_promotion_state == "promoted":
             review_state = "open"
@@ -1769,6 +1932,43 @@ def apply_thread_classification_result(
         else:
             review_state = "disregard"
             first_opened_at = None
+    elif review_state not in {"open", "handled", "disregard", "expired"}:
+        review_state = "open"
+
+    attention_required_at = _derive_attention_required_at(
+        last_message_at=previous_state["latest_correspondence_at"],
+        last_external_inbound_at=previous_state["last_external_inbound_at"],
+        latest_triggered_at=previous_state["latest_triggered_at"],
+        first_opened_at=first_opened_at,
+    )
+    if first_opened_at is not None and review_state not in {"handled", "disregard"}:
+        if _should_expire_open_thread(
+            attention_required_at=attention_required_at,
+            now=utc_now(),
+        ):
+            if review_state != "expired":
+                last_reviewed_at = utc_now()
+            review_state = "expired"
+        else:
+            review_state = "open"
+
+    current_attention_state = (
+        "action_needed"
+        if review_state == "open"
+        else "handled"
+        if review_state == "handled"
+        else "expired"
+        if review_state == "expired"
+        else "dismissed"
+    )
+    dashboard_status = "working" if review_state == "open" else "hidden"
+    dashboard_reason = (
+        effective_event_tags[0]
+        if review_state == "open" and effective_promotion_state == "promoted"
+        else "expired"
+        if review_state == "expired"
+        else None
+    )
 
     next_state = {
         "system_event_tags": event_tags,
@@ -1827,12 +2027,17 @@ def apply_thread_classification_result(
                 summary = %s,
                 review_state = %s,
                 first_opened_at = %s,
+                last_reviewed_at = %s,
                 latest_classification_id = %s,
                 last_classified_at = timezone('utc', now()),
                 classifier_provider = %s,
                 classifier_model = %s,
                 classifier_version = %s,
                 classifier_overall_confidence = %s,
+                current_attention_state = %s,
+                dashboard_status = %s,
+                dashboard_reason = %s,
+                dashboard_last_evaluated_at = timezone('utc', now()),
                 state_decision_source = 'llm',
                 state_decision_version = %s,
                 state_last_changed_at = timezone('utc', now()),
@@ -1856,11 +2061,15 @@ def apply_thread_classification_result(
                 effective_summary,
                 review_state,
                 first_opened_at,
+                last_reviewed_at,
                 classification_id,
                 classifier_provider,
                 classifier_model,
                 classifier_version,
                 overall_confidence,
+                current_attention_state,
+                dashboard_status,
+                dashboard_reason,
                 classifier_version,
                 thread_record_id,
             ),
