@@ -248,6 +248,7 @@ summary::-webkit-details-marker {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  gap: 6px;
   width: fit-content;
   border-radius: 999px;
   padding: 4px 10px;
@@ -255,6 +256,11 @@ summary::-webkit-details-marker {
   font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
+}
+
+.status-pill__count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.74;
 }
 
 .status-pill--success {

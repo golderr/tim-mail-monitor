@@ -11,19 +11,7 @@ import type {
   InternalParticipant,
   ThreadMessage,
 } from "@/lib/dashboard-data";
-
-const EVENT_LABELS: Record<string, string> = {
-  deadline: "Deadline",
-  draft_needed: "Draft Needed",
-  meeting_request: "Meeting Request",
-  scope_change: "Scope Change",
-  client_materials: "Client Materials",
-  status_request: "Status Request",
-  commitment: "Commitment",
-  cancellation_pause: "Cancellation/Pause",
-  proposal_request: "Proposal Request",
-  new_project: "New Project",
-};
+import { EVENT_LABELS } from "@/lib/thread-flags";
 
 const REVIEW_STATE_LABELS: Record<string, string> = {
   open: "Open",

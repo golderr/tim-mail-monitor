@@ -1,6 +1,7 @@
 import "server-only";
 
 import { query } from "@/lib/server-db";
+import { EVENT_TAG_OPTIONS } from "@/lib/thread-flags";
 
 export type DashboardName =
   | "needs_attention"
@@ -14,6 +15,8 @@ export type DashboardMetric = {
   notPromoted: number;
   urgentOpen: number;
   unansweredOpen: number;
+  openPrimaryEventTagCounts: Record<string, number>;
+  openNoConsultingStaffCount: number;
   lastSyncStatus: string;
   lastSyncAt: string | null;
   lastSyncMessagesSeen: number;
@@ -30,6 +33,7 @@ export type DashboardFilters = {
   promotionState?: "promoted" | "not_promoted";
   reviewState?: "open" | "handled" | "disregard";
   hasOverrides?: "yes" | "no";
+  noConsultingStaff?: "yes" | "no";
 };
 
 export type ThreadRecipient = {
@@ -185,6 +189,9 @@ export function parseDashboardFilters(
     hasOverrides: normalizeString(
       searchParams.hasOverrides,
     ) as DashboardFilters["hasOverrides"],
+    noConsultingStaff: normalizeString(
+      searchParams.noConsultingStaff,
+    ) as DashboardFilters["noConsultingStaff"],
   };
 }
 
@@ -296,6 +303,14 @@ function buildDashboardWhereClause(
       filters.hasOverrides === "yes"
         ? "has_human_overrides = true"
         : "has_human_overrides = false",
+    );
+  }
+
+  if (filters.noConsultingStaff) {
+    conditions.push(
+      filters.noConsultingStaff === "yes"
+        ? "no_consulting_staff_attached = true"
+        : "no_consulting_staff_attached = false",
     );
   }
 
@@ -424,14 +439,25 @@ function deriveParticipants(messages: ThreadMessage[]) {
 }
 
 export async function getDashboardMetrics(): Promise<DashboardMetric> {
+  const openPrimaryEventTagSelects = EVENT_TAG_OPTIONS.map(
+    (option) =>
+      `count(*) filter (
+          where review_state = 'open'
+            and primary_event_tag = '${option.value}'
+        )::text as open_${option.value}`,
+  ).join(",\n        ");
+
   const [{ rows: threadRows }, { rows: syncRows }] = await Promise.all([
-    query<{
+    query<
+      {
       needs_attention: string;
       closed: string;
       not_promoted: string;
       urgent_open: string;
       unanswered_open: string;
-    }>(`
+      open_no_consulting_staff: string;
+    } & Record<string, string | null>
+    >(`
       select
         count(*) filter (where review_state = 'open')::text as needs_attention,
         count(*) filter (
@@ -449,7 +475,12 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
         count(*) filter (
           where review_state = 'open'
             and reply_state = 'unanswered'
-        )::text as unanswered_open
+        )::text as unanswered_open,
+        count(*) filter (
+          where review_state = 'open'
+            and no_consulting_staff_attached = true
+        )::text as open_no_consulting_staff,
+        ${openPrimaryEventTagSelects}
       from public.thread_records
       where has_external_participants = true
     `),
@@ -467,6 +498,12 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
 
   const threadRow = threadRows[0];
   const syncRow = syncRows[0];
+  const openPrimaryEventTagCounts = Object.fromEntries(
+    EVENT_TAG_OPTIONS.map((option) => [
+      option.value,
+      Number(threadRow?.[`open_${option.value}`] ?? 0),
+    ]),
+  );
 
   return {
     needsAttention: Number(threadRow?.needs_attention ?? 0),
@@ -474,6 +511,8 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
     notPromoted: Number(threadRow?.not_promoted ?? 0),
     urgentOpen: Number(threadRow?.urgent_open ?? 0),
     unansweredOpen: Number(threadRow?.unanswered_open ?? 0),
+    openPrimaryEventTagCounts,
+    openNoConsultingStaffCount: Number(threadRow?.open_no_consulting_staff ?? 0),
     lastSyncStatus: syncRow?.status ?? "unknown",
     lastSyncAt: syncRow?.completed_at ?? null,
     lastSyncMessagesSeen: syncRow?.messages_seen ?? 0,

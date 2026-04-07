@@ -4,19 +4,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { startTransition, useCallback, useEffect, useState } from "react";
 
 import type { DashboardFilters, DashboardName } from "@/lib/dashboard-data";
-
-const TAG_OPTIONS = [
-  { value: "deadline", label: "Deadline" },
-  { value: "draft_needed", label: "Draft Needed" },
-  { value: "meeting_request", label: "Meeting Request" },
-  { value: "scope_change", label: "Scope Change" },
-  { value: "client_materials", label: "Client Materials" },
-  { value: "status_request", label: "Status Request" },
-  { value: "commitment", label: "Commitment" },
-  { value: "cancellation_pause", label: "Cancellation/Pause" },
-  { value: "proposal_request", label: "Proposal Request" },
-  { value: "new_project", label: "New Project" },
-] as const;
+import {
+  EVENT_TAG_OPTIONS,
+  NO_CONSULTING_STAFF_LABEL,
+} from "@/lib/thread-flags";
 
 const DATE_WINDOWS = [
   { label: "Last 7 days", days: 7 },
@@ -31,9 +22,13 @@ function formatDateInput(date: Date) {
 export function DashboardFiltersPanel({
   dashboard,
   filters,
+  openPrimaryEventTagCounts,
+  openNoConsultingStaffCount,
 }: Readonly<{
   dashboard: DashboardName;
   filters: DashboardFilters;
+  openPrimaryEventTagCounts?: Record<string, number>;
+  openNoConsultingStaffCount?: number;
 }>) {
   const router = useRouter();
   const pathname = usePathname();
@@ -41,6 +36,7 @@ export function DashboardFiltersPanel({
   const currentClient = filters.client ?? "";
   const currentProjectNumber = filters.projectNumber ?? "";
   const selectedTags = filters.tags ?? [];
+  const noConsultingStaffSelected = filters.noConsultingStaff === "yes";
   const [client, setClient] = useState(currentClient);
   const [projectNumber, setProjectNumber] = useState(currentProjectNumber);
 
@@ -187,8 +183,9 @@ export function DashboardFiltersPanel({
       <div className="filters-row">
         <span className="filters-row__label">Tags</span>
         <div className="filters-row__pills">
-          {TAG_OPTIONS.map((option) => {
+          {EVENT_TAG_OPTIONS.map((option) => {
             const isActive = selectedTags.includes(option.value);
+            const count = openPrimaryEventTagCounts?.[option.value];
             return (
               <button
                 className={`status-pill ${
@@ -204,11 +201,42 @@ export function DashboardFiltersPanel({
                 type="button"
               >
                 {option.label}
+                {typeof count === "number" ? (
+                  <span className="status-pill__count">{count}</span>
+                ) : null}
               </button>
             );
           })}
         </div>
       </div>
+
+      {dashboard === "needs_attention" ? (
+        <div className="filters-row">
+          <span className="filters-row__label">Staffing</span>
+          <div className="filters-row__pills">
+            <button
+              className={`status-pill ${
+                noConsultingStaffSelected
+                  ? "status-pill--warning"
+                  : "status-pill--neutral"
+              }`}
+              onClick={() =>
+                updateQuery({
+                  noConsultingStaff: noConsultingStaffSelected ? undefined : "yes",
+                })
+              }
+              type="button"
+            >
+              {NO_CONSULTING_STAFF_LABEL}
+              {typeof openNoConsultingStaffCount === "number" ? (
+                <span className="status-pill__count">
+                  {openNoConsultingStaffCount}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="filters-row">
         <span className="filters-row__label">Date</span>

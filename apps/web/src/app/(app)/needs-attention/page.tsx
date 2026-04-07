@@ -54,6 +54,8 @@ export default async function NeedsAttentionPage({
       <DashboardFiltersPanel
         dashboard="needs_attention"
         filters={filters}
+        openPrimaryEventTagCounts={metrics.openPrimaryEventTagCounts}
+        openNoConsultingStaffCount={metrics.openNoConsultingStaffCount}
         key={returnTo}
       />
 
