@@ -114,6 +114,10 @@ Rules:
 - reply_state should describe the current operational state of the thread, not merely the last message direction.
 - card_header must be a short, concrete takeaway for the card header. Good examples: "Estimated meeting date: Monday 4/20", "Changed scope: multifamily only", "Project cancellation: client says to hold off", "Client materials sent", "Estimated draft wanted by Monday 4/6".
 - card_header must use explicit dates in month/day form when timing is known. Say "Need by Monday 4/6", not "Need by Monday".
+- card_header should name the most relevant individual whenever a specific person made the request, sent materials, changed scope, or made the commitment.
+- Use the actor labels provided in the thread payload, such as "John Wu (TCG)" or "Barry Long (external)".
+- Prefer active voice when naming the actor. Good examples: "John Wu (TCG) committed to send v2 by Friday 4/10." and "Barry Long (external) requested urgent application revisions by Monday 4/6."
+- If no single relevant individual is identifiable from the thread, you may omit the name.
 - summary must summarize the full thread while emphasizing the most important and latest operational developments.
 - summary may use markdown bold for emphasis, but only `**...**` around the most important 2-3 short highlights. Do not use bullets, HTML, or other markdown.
 - In the summary, try to explicitly assess whether the thread is likely about a new project, a project already underway, or is still unclear.
@@ -130,6 +134,21 @@ Rules:
 - Outbound-only follow-up proposals should not be marked unanswered unless a later substantive client ask remains unresolved in the thread.
 - Prefer not_promoted over promoted when the evidence is only weak scheduling chatter with no real operational consequence.
 """
+
+INTERNAL_ACTOR_EVENT_TAGS = frozenset({"commitment"})
+EXTERNAL_ACTOR_EVENT_TAGS = frozenset(
+    {
+        "deadline",
+        "draft_needed",
+        "meeting_request",
+        "scope_change",
+        "client_materials",
+        "status_request",
+        "cancellation_pause",
+        "proposal_request",
+        "new_project",
+    }
+)
 
 
 def is_classifier_configured(settings: Settings) -> bool:
@@ -230,6 +249,107 @@ def normalize_classifier_text(
     return WEEKDAY_PATTERN.sub(replace_weekday, normalized)
 
 
+def _actor_label_base(actor_label: str | None) -> str | None:
+    if not actor_label:
+        return None
+
+    base = actor_label.split(" (", 1)[0].strip()
+    return base or None
+
+
+def _actor_label_variants(actor_label: str | None) -> set[str]:
+    base = _actor_label_base(actor_label)
+    if not base:
+        return set()
+
+    variants = {base.casefold()}
+    if "," in base:
+        parts = [part.strip() for part in base.split(",", 1)]
+        if len(parts) == 2 and all(parts):
+            variants.add(f"{parts[1]} {parts[0]}".casefold())
+    return variants
+
+
+def _card_header_mentions_actor(
+    card_header: str,
+    *,
+    thread_context: dict[str, Any],
+    actor_label: str | None,
+) -> bool:
+    card_header_cf = card_header.casefold()
+    if "(external)" in card_header_cf or "(tcg)" in card_header_cf:
+        return True
+
+    actor_candidates: set[str] = set()
+
+    actor_candidates.update(_actor_label_variants(actor_label))
+
+    for message in thread_context.get("messages", []):
+        actor_candidates.update(_actor_label_variants(message.get("sender_actor_label")))
+
+        for recipient in message.get("recipients", []):
+            actor_candidates.update(_actor_label_variants(recipient.get("actor_label")))
+
+    return any(candidate in card_header_cf for candidate in actor_candidates if candidate)
+
+
+def _infer_card_header_actor_label(
+    *,
+    thread_context: dict[str, Any],
+    primary_event_tag: str | None,
+    event_tags: list[str],
+) -> str | None:
+    target_event_tag = primary_event_tag or (event_tags[0] if event_tags else None)
+    if target_event_tag is None:
+        return None
+
+    messages = thread_context.get("messages", [])
+    if target_event_tag in INTERNAL_ACTOR_EVENT_TAGS:
+        for message in reversed(messages):
+            if message.get("sender_is_internal") is True and message.get("sender_actor_label"):
+                return str(message["sender_actor_label"])
+    elif target_event_tag in EXTERNAL_ACTOR_EVENT_TAGS:
+        for message in reversed(messages):
+            if message.get("sender_is_external") is True and message.get("sender_actor_label"):
+                return str(message["sender_actor_label"])
+
+    for message in reversed(messages):
+        actor_label = message.get("sender_actor_label")
+        if actor_label:
+            return str(actor_label)
+
+    return None
+
+
+def _ensure_card_header_actor_label(
+    card_header: str | None,
+    *,
+    thread_context: dict[str, Any],
+    primary_event_tag: str | None,
+    event_tags: list[str],
+) -> str | None:
+    if not card_header:
+        return card_header
+
+    actor_label = _infer_card_header_actor_label(
+        thread_context=thread_context,
+        primary_event_tag=primary_event_tag,
+        event_tags=event_tags,
+    )
+    if not actor_label:
+        return card_header
+
+    if _card_header_mentions_actor(
+        card_header,
+        thread_context=thread_context,
+        actor_label=actor_label,
+    ):
+        return card_header
+
+    candidate = f"{actor_label}: {card_header}"
+    return candidate if len(candidate) <= 180 else card_header
+
+
 def build_thread_classification_input(thread_context: dict[str, Any]) -> tuple[str, str]:
     reference_local_date = _resolve_reference_local_date(thread_context)
     prompt_payload = {
@@ -291,10 +411,6 @@ def classify_thread_with_llm(
     if parsed is None:
         raise RuntimeError("OpenAI returned no parsed classification output.")
 
-    normalized_card_header = normalize_classifier_text(
-        parsed.card_header,
-        thread_context=thread_context,
-    )
     normalized_summary = normalize_classifier_text(
         parsed.summary,
         thread_context=thread_context,
@@ -312,6 +428,15 @@ def classify_thread_with_llm(
         else filtered_event_tags[0]
         if filtered_event_tags
         else None
+    )
+    normalized_card_header = _ensure_card_header_actor_label(
+        normalize_classifier_text(
+            parsed.card_header,
+            thread_context=thread_context,
+        ),
+        thread_context=thread_context,
+        primary_event_tag=primary_event_tag,
+        event_tags=filtered_event_tags,
     )
     applied_to_thread_state = (
         parsed.overall_confidence >= settings.classification_overall_min_confidence

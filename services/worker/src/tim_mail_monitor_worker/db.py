@@ -1665,6 +1665,14 @@ def load_thread_classification_context(
                 "direction": message["direction"],
                 "sender_name": message["sender_name"],
                 "sender_email": message["sender_email"],
+                "sender_is_internal": bool(message["sender_is_internal"]),
+                "sender_is_external": bool(message["sender_is_external"]),
+                "sender_actor_label": _format_classifier_actor_label(
+                    display_name=message["sender_name"],
+                    email=message["sender_email"],
+                    is_internal=bool(message["sender_is_internal"]),
+                    is_external=bool(message["sender_is_external"]),
+                ),
                 "subject": message["subject"],
                 "body_preview": _normalize_whitespace(message["body_preview"]),
                 "body_text": _normalize_whitespace(message["body_text"]),
@@ -1705,6 +1713,24 @@ def load_thread_classification_context(
     }
 
 
+def _format_classifier_actor_label(
+    *,
+    display_name: str | None,
+    email: str | None,
+    is_internal: bool,
+    is_external: bool,
+) -> str | None:
+    base = display_name or email
+    if not base:
+        return None
+
+    if is_internal:
+        return f"{base} (TCG)"
+    if is_external:
+        return f"{base} (external)"
+    return base
+
+
 def recipient_map_to_serializable(
     recipients: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -1715,6 +1741,12 @@ def recipient_map_to_serializable(
             "email": recipient["email"],
             "is_internal": recipient["is_internal"],
             "is_external": recipient["is_external"],
+            "actor_label": _format_classifier_actor_label(
+                display_name=recipient["display_name"],
+                email=recipient["email"],
+                is_internal=recipient["is_internal"],
+                is_external=recipient["is_external"],
+            ),
         }
         for recipient in recipients
     ]
