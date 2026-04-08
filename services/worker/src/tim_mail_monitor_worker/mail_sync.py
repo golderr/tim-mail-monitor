@@ -16,6 +16,7 @@ from tim_mail_monitor_worker.db import (
     ensure_mailbox_config,
     fail_running_sync_runs,
     get_internal_domains,
+    lock_unfinalized_attachment_policies,
     refresh_thread_record,
     replace_attachments,
     replace_communication_events,
@@ -188,6 +189,10 @@ def sync_mailbox(
             settings=settings,
             limit=len(touched_thread_ids) or 0,
             only_stale=False,
+            thread_ids=list(touched_thread_ids),
+        )
+        lock_unfinalized_attachment_policies(
+            conn,
             thread_ids=list(touched_thread_ids),
         )
 

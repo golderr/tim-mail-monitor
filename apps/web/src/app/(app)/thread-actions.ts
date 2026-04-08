@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import { requireAnyRole, requireRole } from "@/lib/auth";
 import { withClient } from "@/lib/server-db";
 
 const REVIEW_STATES = new Set(["open", "handled", "disregard"]);
@@ -19,6 +20,8 @@ function asString(value: FormDataEntryValue | null) {
 }
 
 export async function updateThreadReviewStateAction(formData: FormData) {
+  const actor = await requireAnyRole(["admin", "lead"]);
+
   const threadId = asString(formData.get("threadId"));
   const nextReviewState = asString(formData.get("reviewState"));
   const returnTo = asString(formData.get("returnTo")) ?? "/needs-attention";
@@ -34,9 +37,10 @@ export async function updateThreadReviewStateAction(formData: FormData) {
       const { rows } = await client.query<{
         review_state: string;
         first_opened_at: string | null;
+        promotion_state: string;
       }>(
         `
-          select review_state, first_opened_at::text
+          select review_state, first_opened_at::text, promotion_state
           from public.thread_records
           where id = $1
           for update
@@ -47,6 +51,15 @@ export async function updateThreadReviewStateAction(formData: FormData) {
       const currentRow = rows[0];
       if (!currentRow) {
         throw new Error("Thread not found.");
+      }
+
+      if (
+        actor.role !== "admin" &&
+        nextReviewState === "open" &&
+        currentRow.promotion_state === "not_promoted" &&
+        currentRow.first_opened_at === null
+      ) {
+        throw new Error("Only admins can promote a not-promoted thread into open.");
       }
 
       const { rows: updatedRows } = await client.query<{
@@ -81,16 +94,18 @@ export async function updateThreadReviewStateAction(formData: FormData) {
             insert into public.thread_state_history (
               thread_record_id,
               actor_type,
+              actor_user_id,
               field_name,
               old_value,
               new_value,
               reason,
               source
             )
-            values ($1, 'user', 'review_state', $2::jsonb, $3::jsonb, $4, 'web_dashboard')
+            values ($1, 'user', $2::uuid, 'review_state', $3::jsonb, $4::jsonb, $5, 'web_dashboard')
           `,
           [
             threadId,
+            actor.id,
             JSON.stringify(currentRow.review_state),
             JSON.stringify(updatedRow.review_state),
             "Review state changed from dashboard.",
@@ -104,16 +119,18 @@ export async function updateThreadReviewStateAction(formData: FormData) {
             insert into public.thread_state_history (
               thread_record_id,
               actor_type,
+              actor_user_id,
               field_name,
               old_value,
               new_value,
               reason,
               source
             )
-            values ($1, 'user', 'first_opened_at', $2::jsonb, $3::jsonb, $4, 'web_dashboard')
+            values ($1, 'user', $2::uuid, 'first_opened_at', $3::jsonb, $4::jsonb, $5, 'web_dashboard')
           `,
           [
             threadId,
+            actor.id,
             JSON.stringify(currentRow.first_opened_at),
             JSON.stringify(updatedRow.first_opened_at),
             "Thread was opened from a dashboard action.",
@@ -137,6 +154,8 @@ export async function updateThreadReviewStateAction(formData: FormData) {
 }
 
 export async function overrideThreadClassificationAction(formData: FormData) {
+  const actor = await requireRole("admin");
+
   const threadId = asString(formData.get("threadId"));
   const returnTo = asString(formData.get("returnTo")) ?? "/admin";
   const promotionState = asString(formData.get("promotionState"));
@@ -291,16 +310,18 @@ export async function overrideThreadClassificationAction(formData: FormData) {
             insert into public.thread_state_history (
               thread_record_id,
               actor_type,
+              actor_user_id,
               field_name,
               old_value,
               new_value,
               reason,
               source
             )
-            values ($1, 'user', $2, $3::jsonb, $4::jsonb, $5, 'admin_override')
+            values ($1, 'user', $2::uuid, $3, $4::jsonb, $5::jsonb, $6, 'admin_override')
           `,
           [
             threadId,
+            actor.id,
             row.fieldName,
             JSON.stringify(row.systemValue),
             JSON.stringify(row.effectiveValue),
@@ -313,16 +334,18 @@ export async function overrideThreadClassificationAction(formData: FormData) {
             insert into public.thread_override_feedback (
               thread_record_id,
               thread_classification_id,
+              actor_user_id,
               field_name,
               system_value,
               effective_value,
               note
             )
-            values ($1, $2, $3, $4::jsonb, $5::jsonb, $6)
+            values ($1, $2, $3::uuid, $4, $5::jsonb, $6::jsonb, $7)
           `,
           [
             threadId,
             currentRow.latest_classification_id,
+            actor.id,
             row.fieldName,
             JSON.stringify(row.systemValue),
             JSON.stringify(row.effectiveValue),
@@ -343,6 +366,8 @@ export async function overrideThreadClassificationAction(formData: FormData) {
 }
 
 export async function toggleThreadUrgencyAction(formData: FormData) {
+  const actor = await requireAnyRole(["admin", "lead"]);
+
   const threadId = asString(formData.get("threadId"));
   const returnTo = asString(formData.get("returnTo")) ?? "/needs-attention";
 
@@ -396,16 +421,18 @@ export async function toggleThreadUrgencyAction(formData: FormData) {
           insert into public.thread_state_history (
             thread_record_id,
             actor_type,
+            actor_user_id,
             field_name,
             old_value,
             new_value,
             reason,
             source
           )
-          values ($1, 'user', 'is_urgent', $2::jsonb, $3::jsonb, $4, 'dashboard_urgency_toggle')
+          values ($1, 'user', $2::uuid, 'is_urgent', $3::jsonb, $4::jsonb, $5, 'dashboard_urgency_toggle')
         `,
         [
           threadId,
+          actor.id,
           JSON.stringify(currentRow.is_urgent),
           JSON.stringify(nextUrgency),
           "Urgency toggled from thread card.",
@@ -417,16 +444,18 @@ export async function toggleThreadUrgencyAction(formData: FormData) {
           insert into public.thread_override_feedback (
             thread_record_id,
             thread_classification_id,
+            actor_user_id,
             field_name,
             system_value,
             effective_value,
             note
           )
-          values ($1, $2, 'is_urgent', $3::jsonb, $4::jsonb, $5)
+          values ($1, $2, $3::uuid, 'is_urgent', $4::jsonb, $5::jsonb, $6)
         `,
         [
           threadId,
           currentRow.latest_classification_id,
+          actor.id,
           JSON.stringify(currentRow.system_is_urgent),
           JSON.stringify(nextUrgency),
           "Urgency manually toggled from a dashboard card.",

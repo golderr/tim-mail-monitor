@@ -2,15 +2,19 @@
 
 import { redirect } from "next/navigation";
 
-import { clearDemoSession, createDemoSession } from "@/lib/auth";
-
-export async function loginAction() {
-  await createDemoSession();
-  redirect("/dashboard");
-}
+import { logUserAccessEvent } from "@/lib/access-audit";
+import { clearSession, getCurrentUser } from "@/lib/auth";
 
 export async function logoutAction() {
-  await clearDemoSession();
+  const currentUser = await getCurrentUser();
+  if (currentUser) {
+    await logUserAccessEvent({
+      currentUser,
+      eventType: "sign_out",
+      status: "success",
+      routePath: "/logout",
+    });
+  }
+  await clearSession();
   redirect("/login");
 }
-

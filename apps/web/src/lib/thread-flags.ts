@@ -16,3 +16,4 @@ export const EVENT_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 export const NO_CONSULTING_STAFF_LABEL = "No Consulting Staff";
+export const HAS_ATTACHMENT_LABEL = "Has Attachments";

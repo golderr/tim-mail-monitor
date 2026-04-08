@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { navigationItems } from "@/lib/navigation";
+import type { NavigationItem } from "@/lib/navigation";
 
-export function SidebarNav() {
+export function SidebarNav({ items }: Readonly<{ items: readonly NavigationItem[] }>) {
   const pathname = usePathname();
 
   return (
     <nav className="sidebar__nav" aria-label="Primary">
-      {navigationItems.map((item) => {
+      {items.map((item) => {
         const isActive = pathname === item.href;
 
         return (
@@ -27,4 +27,3 @@ export function SidebarNav() {
     </nav>
   );
 }
-

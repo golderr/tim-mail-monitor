@@ -1,5 +1,7 @@
 import { DashboardFiltersPanel } from "@/components/dashboard-filters";
 import { ThreadList } from "@/components/thread-list";
+import { logUserAccessEvent } from "@/lib/access-audit";
+import { requireRole } from "@/lib/auth";
 import {
   buildReturnToPath,
   getDashboardMetrics,
@@ -14,6 +16,16 @@ export default async function NotPromotedPage({
 }: Readonly<{
   searchParams: SearchParams;
 }>) {
+  const currentUser = await requireRole("admin", {
+    accessPath: "/not-promoted",
+  });
+  await logUserAccessEvent({
+    currentUser,
+    eventType: "route_access",
+    status: "success",
+    routePath: "/not-promoted",
+  });
+
   const resolvedSearchParams = await searchParams;
   const filters = parseDashboardFilters(resolvedSearchParams);
   const returnTo = buildReturnToPath("/not-promoted", resolvedSearchParams);
@@ -30,7 +42,7 @@ export default async function NotPromotedPage({
         <h1>Included threads that never entered the open queue</h1>
         <p>
           These threads remain in the corpus but were not promoted into Needs
-          Attention. Leads can still move one to open when context suggests it
+          Attention. Admins can still move one to open when context suggests it
           should become operational.
         </p>
       </header>

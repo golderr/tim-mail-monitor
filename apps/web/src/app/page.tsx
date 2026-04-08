@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { hasSession } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth";
 
 export default async function Home() {
-  redirect((await hasSession()) ? "/needs-attention" : "/login");
+  redirect((await getCurrentUser()) ? "/needs-attention" : "/login");
 }

@@ -2,8 +2,18 @@ import Link from "next/link";
 
 import { SidebarNav } from "@/components/sidebar-nav";
 import { logoutAction } from "@/lib/auth-actions";
+import type { AppUser } from "@/lib/auth";
+import { getNavigationItemsForRole } from "@/lib/navigation";
 
-export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
+export function AppShell({
+  children,
+  currentUser,
+}: Readonly<{
+  children: React.ReactNode;
+  currentUser: AppUser;
+}>) {
+  const navigationItems = getNavigationItemsForRole(currentUser.role);
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -14,12 +24,11 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
           </Link>
         </div>
 
-        <SidebarNav />
+        <SidebarNav items={navigationItems} />
 
         <div className="sidebar__footer">
           <p className="sidebar__copy">
-            Placeholder access only. Replace with real auth before any live
-            mailbox data is connected.
+            Signed in as {currentUser.email} ({currentUser.role}).
           </p>
 
           <form action={logoutAction}>

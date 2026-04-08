@@ -1,5 +1,7 @@
 import { DashboardFiltersPanel } from "@/components/dashboard-filters";
 import { ThreadList } from "@/components/thread-list";
+import { logUserAccessEvent } from "@/lib/access-audit";
+import { requireAnyRole } from "@/lib/auth";
 import {
   buildReturnToPath,
   getDashboardMetrics,
@@ -14,6 +16,16 @@ export default async function ClosedPage({
 }: Readonly<{
   searchParams: SearchParams;
 }>) {
+  const currentUser = await requireAnyRole(["admin", "lead"], {
+    accessPath: "/closed",
+  });
+  await logUserAccessEvent({
+    currentUser,
+    eventType: "route_access",
+    status: "success",
+    routePath: "/closed",
+  });
+
   const resolvedSearchParams = await searchParams;
   const filters = parseDashboardFilters(resolvedSearchParams);
   const returnTo = buildReturnToPath("/closed", resolvedSearchParams);

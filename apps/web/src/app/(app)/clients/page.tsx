@@ -1,6 +1,18 @@
 import { SectionPage } from "@/components/section-page";
+import { logUserAccessEvent } from "@/lib/access-audit";
+import { requireRole } from "@/lib/auth";
 
-export default function ClientsPage() {
+export default async function ClientsPage() {
+  const currentUser = await requireRole("admin", {
+    accessPath: "/clients",
+  });
+  await logUserAccessEvent({
+    currentUser,
+    eventType: "route_access",
+    status: "success",
+    routePath: "/clients",
+  });
+
   return (
     <SectionPage
       eyebrow="Clients"
@@ -14,4 +26,3 @@ export default function ClientsPage() {
     />
   );
 }
-

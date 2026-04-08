@@ -1,5 +1,7 @@
 import { DashboardFiltersPanel } from "@/components/dashboard-filters";
 import { ThreadList } from "@/components/thread-list";
+import { getRecentUserAccessEvents, logUserAccessEvent } from "@/lib/access-audit";
+import { requireRole } from "@/lib/auth";
 import {
   buildReturnToPath,
   getDashboardMetrics,
@@ -14,13 +16,24 @@ export default async function AdminPage({
 }: Readonly<{
   searchParams: SearchParams;
 }>) {
+  const currentUser = await requireRole("admin", {
+    accessPath: "/admin",
+  });
+  await logUserAccessEvent({
+    currentUser,
+    eventType: "route_access",
+    status: "success",
+    routePath: "/admin",
+  });
+
   const resolvedSearchParams = await searchParams;
   const filters = parseDashboardFilters(resolvedSearchParams);
   const returnTo = buildReturnToPath("/admin", resolvedSearchParams);
 
-  const [threads, metrics] = await Promise.all([
+  const [threads, metrics, accessEvents] = await Promise.all([
     getThreadsForDashboard("admin", filters, 60),
     getDashboardMetrics(),
+    getRecentUserAccessEvents(40),
   ]);
 
   return (
@@ -29,9 +42,9 @@ export default async function AdminPage({
         <span className="page-header__eyebrow">Admin</span>
         <h1>Operational controls and state inspection</h1>
         <p>
-          This view exposes all threads with override-aware filters so leads can
-          inspect how the system classified each item and move it between review
-          states when needed.
+          This view exposes all threads with override-aware filters so admins
+          can inspect how the system classified each item and move it between
+          review states when needed.
         </p>
       </header>
 
@@ -62,6 +75,32 @@ export default async function AdminPage({
       </section>
 
       <DashboardFiltersPanel dashboard="admin" filters={filters} key={returnTo} />
+
+      <section className="panel">
+        <div className="page-header">
+          <span className="page-header__eyebrow">Audit</span>
+          <h2>Recent access events</h2>
+        </div>
+        {accessEvents.length > 0 ? (
+          <div className="list">
+            {accessEvents.map((event) => (
+              <div className="list-item" key={event.id}>
+                <strong>
+                  {event.userEmail ?? "Unknown user"}{" "}
+                  {event.userRole ? `(${event.userRole})` : ""}
+                </strong>
+                <span>
+                  {event.eventType} | {event.status}
+                  {event.routePath ? ` | ${event.routePath}` : ""} |{" "}
+                  {new Date(event.createdAt).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-state">No access events recorded yet.</p>
+        )}
+      </section>
 
       <ThreadList
         dashboard="admin"

@@ -484,6 +484,60 @@ summary::-webkit-details-marker {
   line-height: 1.6;
 }
 
+.thread-card__attachments {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #d7e3f5;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #f7faff 0%, #eef4fd 100%);
+}
+
+.thread-card__attachments-label {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.thread-card__attachments-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.thread-card__attachment {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #c9daf3;
+  background: #ffffff;
+  color: var(--foreground);
+  text-decoration: none;
+  box-shadow: 0 6px 16px rgba(26, 45, 72, 0.06);
+}
+
+.thread-card__attachment:hover {
+  border-color: #8fb0de;
+  background: #f7fbff;
+}
+
+.thread-card__attachment-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.thread-card__attachment-meta {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .thread-card__headline strong,
 .thread-card__snippet strong {
   font-weight: 800;
@@ -562,6 +616,42 @@ summary::-webkit-details-marker {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.message-card__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.message-card__attachment {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #d7e3f5;
+  background: #f4f8fe;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.message-card__attachment:hover {
+  border-color: #9cb6dd;
+  background: #ecf3fc;
+}
+
+.message-card__attachment-name {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.message-card__attachment-size {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .message-card__body {
@@ -714,6 +804,14 @@ summary::-webkit-details-marker {
   margin-top: 14px;
   display: grid;
   gap: 12px;
+}
+
+.thread-card__history-list {
+  margin-top: 14px;
+}
+
+.thread-card__history-item strong {
+  line-height: 1.5;
 }
 
 .empty-state {

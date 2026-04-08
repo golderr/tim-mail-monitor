@@ -1,6 +1,18 @@
 import { SectionPage } from "@/components/section-page";
+import { logUserAccessEvent } from "@/lib/access-audit";
+import { requireRole } from "@/lib/auth";
 
-export default function DigestHistoryPage() {
+export default async function DigestHistoryPage() {
+  const currentUser = await requireRole("admin", {
+    accessPath: "/digest-history",
+  });
+  await logUserAccessEvent({
+    currentUser,
+    eventType: "route_access",
+    status: "success",
+    routePath: "/digest-history",
+  });
+
   return (
     <SectionPage
       eyebrow="Digest History"
@@ -14,4 +26,3 @@ export default function DigestHistoryPage() {
     />
   );
 }
-

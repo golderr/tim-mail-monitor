@@ -1,13 +1,12 @@
 import { AppShell } from "@/components/app-shell";
-import { requireSession } from "@/lib/auth";
+import { requireAnyRole } from "@/lib/auth";
 
 export default async function ProtectedLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  await requireSession();
+  const currentUser = await requireAnyRole(["admin", "lead"]);
 
-  return <AppShell>{children}</AppShell>;
+  return <AppShell currentUser={currentUser}>{children}</AppShell>;
 }
-

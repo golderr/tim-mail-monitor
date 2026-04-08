@@ -17,6 +17,7 @@ export type DashboardMetric = {
   unansweredOpen: number;
   openPrimaryEventTagCounts: Record<string, number>;
   openNoConsultingStaffCount: number;
+  openHasAttachmentCount: number;
   lastSyncStatus: string;
   lastSyncAt: string | null;
   lastSyncMessagesSeen: number;
@@ -34,6 +35,7 @@ export type DashboardFilters = {
   reviewState?: "open" | "handled" | "disregard" | "expired";
   hasOverrides?: "yes" | "no";
   noConsultingStaff?: "yes" | "no";
+  hasAttachments?: "yes" | "no";
 };
 
 export type ThreadRecipient = {
@@ -42,6 +44,14 @@ export type ThreadRecipient = {
   displayName: string | null;
   isInternal: boolean;
   isExternal: boolean;
+};
+
+export type ThreadAttachment = {
+  id: string;
+  name: string;
+  contentType: string | null;
+  sizeBytes: number;
+  downloadPath: string;
 };
 
 export type ThreadMessage = {
@@ -55,6 +65,7 @@ export type ThreadMessage = {
   senderIsExternal: boolean;
   timestamp: string | null;
   recipients: ThreadRecipient[];
+  attachments: ThreadAttachment[];
 };
 
 export type InternalParticipant = {
@@ -63,6 +74,18 @@ export type InternalParticipant = {
   label: string;
   isOnLatestMessage: boolean;
   lastSeenAt: string | null;
+};
+
+export type ThreadStateHistoryEntry = {
+  id: string;
+  fieldName: string;
+  oldValue: string | null;
+  newValue: string | null;
+  actorType: string;
+  actorEmail: string | null;
+  source: string | null;
+  reason: string | null;
+  createdAt: string;
 };
 
 export type DashboardThread = {
@@ -78,6 +101,7 @@ export type DashboardThread = {
   primaryEventTag: string | null;
   isUrgent: boolean;
   noConsultingStaffAttached: boolean;
+  hasEligibleAttachments: boolean;
   reviewState: string;
   replyState: string;
   projectNumber: string | null;
@@ -88,6 +112,7 @@ export type DashboardThread = {
   hasHumanOverrides: boolean;
   messageCount: number;
   messages: ThreadMessage[];
+  stateHistory: ThreadStateHistoryEntry[];
 };
 
 function normalizeString(value: string | string[] | undefined) {
@@ -139,6 +164,41 @@ function normalizeRecipients(value: unknown): ThreadRecipient[] {
   });
 }
 
+function normalizeAttachments(value: unknown): ThreadAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((attachment) => {
+    if (!attachment || typeof attachment !== "object") {
+      return [];
+    }
+
+    const row = attachment as Record<string, unknown>;
+    if (typeof row.id !== "string" || typeof row.name !== "string") {
+      return [];
+    }
+
+    const sizeBytes =
+      typeof row.size_bytes === "number"
+        ? row.size_bytes
+        : typeof row.size_bytes === "string"
+          ? Number(row.size_bytes)
+          : 0;
+
+    return [
+      {
+        id: row.id,
+        name: row.name,
+        contentType:
+          typeof row.content_type === "string" ? row.content_type : null,
+        sizeBytes: Number.isFinite(sizeBytes) ? sizeBytes : 0,
+        downloadPath: `/api/attachments/${row.id}`,
+      },
+    ];
+  });
+}
+
 function normalizeMessages(value: Array<Record<string, unknown>>): ThreadMessage[] {
   return value.map((message) => ({
     id: typeof message.id === "string" ? message.id : "",
@@ -152,7 +212,30 @@ function normalizeMessages(value: Array<Record<string, unknown>>): ThreadMessage
     senderIsExternal: message.sender_is_external === true,
     timestamp: typeof message.message_timestamp === "string" ? message.message_timestamp : null,
     recipients: normalizeRecipients(message.recipients),
+    attachments: normalizeAttachments(message.attachments),
   }));
+}
+
+function normalizeJsonScalar(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed === null || parsed === "") {
+      return null;
+    }
+    if (Array.isArray(parsed)) {
+      return parsed.join(", ");
+    }
+    if (typeof parsed === "boolean") {
+      return parsed ? "Yes" : "No";
+    }
+    return String(parsed);
+  } catch {
+    return value;
+  }
 }
 
 function parseTagFilters(value: string | string[] | undefined) {
@@ -192,6 +275,9 @@ export function parseDashboardFilters(
     noConsultingStaff: normalizeString(
       searchParams.noConsultingStaff,
     ) as DashboardFilters["noConsultingStaff"],
+    hasAttachments: normalizeString(
+      searchParams.hasAttachments,
+    ) as DashboardFilters["hasAttachments"],
   };
 }
 
@@ -311,6 +397,28 @@ function buildDashboardWhereClause(
       filters.noConsultingStaff === "yes"
         ? "no_consulting_staff_attached = true"
         : "no_consulting_staff_attached = false",
+    );
+  }
+
+  if (filters.hasAttachments) {
+    conditions.push(
+      filters.hasAttachments === "yes"
+        ? `exists (
+            select 1
+            from public.messages m_filter
+            inner join public.attachments a_filter on a_filter.message_id = m_filter.id
+            where m_filter.thread_record_id = thread_records.id
+              and a_filter.download_eligible = true
+              and a_filter.is_inline = false
+          )`
+        : `not exists (
+            select 1
+            from public.messages m_filter
+            inner join public.attachments a_filter on a_filter.message_id = m_filter.id
+            where m_filter.thread_record_id = thread_records.id
+              and a_filter.download_eligible = true
+              and a_filter.is_inline = false
+          )`,
     );
   }
 
@@ -456,6 +564,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
       urgent_open: string;
       unanswered_open: string;
       open_no_consulting_staff: string;
+      open_has_attachments: string;
     } & Record<string, string | null>
     >(`
       select
@@ -480,8 +589,19 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
           where review_state = 'open'
             and no_consulting_staff_attached = true
         )::text as open_no_consulting_staff,
+        count(*) filter (
+          where review_state = 'open'
+            and exists (
+              select 1
+              from public.messages m
+              inner join public.attachments a on a.message_id = m.id
+              where m.thread_record_id = tr.id
+                and a.download_eligible = true
+                and a.is_inline = false
+            )
+        )::text as open_has_attachments,
         ${openPrimaryEventTagSelects}
-      from public.thread_records
+      from public.thread_records tr
       where has_external_participants = true
     `),
     query<{
@@ -513,6 +633,7 @@ export async function getDashboardMetrics(): Promise<DashboardMetric> {
     unansweredOpen: Number(threadRow?.unanswered_open ?? 0),
     openPrimaryEventTagCounts,
     openNoConsultingStaffCount: Number(threadRow?.open_no_consulting_staff ?? 0),
+    openHasAttachmentCount: Number(threadRow?.open_has_attachments ?? 0),
     lastSyncStatus: syncRow?.status ?? "unknown",
     lastSyncAt: syncRow?.completed_at ?? null,
     lastSyncMessagesSeen: syncRow?.messages_seen ?? 0,
@@ -544,10 +665,10 @@ export async function getThreadsForDashboard(
     latest_correspondence_direction: "sent" | "received" | null;
     summary: string | null;
     promotion_state: string;
-    has_human_overrides: boolean;
-    no_consulting_staff_attached: boolean;
-    message_count: number;
-  }>(
+      has_human_overrides: boolean;
+      no_consulting_staff_attached: boolean;
+      message_count: number;
+    }>(
     `
       select
         id::text,
@@ -638,6 +759,47 @@ export async function getThreadsForDashboard(
   );
 
   const messageMap = new Map<string, ThreadMessage[]>();
+  const messageIds = messageRows.map((row) => row.id);
+  const attachmentMap = new Map<string, ThreadAttachment[]>();
+  const stateHistoryMap = new Map<string, ThreadStateHistoryEntry[]>();
+
+  if (messageIds.length > 0) {
+    const { rows: attachmentRows } = await query<{
+      message_id: string;
+      id: string;
+      name: string;
+      content_type: string | null;
+      size_bytes: string;
+    }>(
+      `
+        select
+          a.message_id::text as message_id,
+          a.id::text,
+          a.name,
+          a.content_type,
+          a.size_bytes::text
+        from public.attachments a
+        where a.message_id = any($1::uuid[])
+          and a.download_eligible = true
+          and a.is_inline = false
+        order by a.created_at asc, a.name asc
+      `,
+      [messageIds],
+    );
+
+    for (const attachment of attachmentRows) {
+      const current = attachmentMap.get(attachment.message_id) ?? [];
+      current.push({
+        id: attachment.id,
+        name: attachment.name,
+        contentType: attachment.content_type,
+        sizeBytes: Number(attachment.size_bytes || 0),
+        downloadPath: `/api/attachments/${attachment.id}`,
+      });
+      attachmentMap.set(attachment.message_id, current);
+    }
+  }
+
   for (const row of messageRows) {
     const message = normalizeMessages([
       {
@@ -651,11 +813,89 @@ export async function getThreadsForDashboard(
         body_text: row.body_text,
         message_timestamp: row.message_timestamp,
         recipients: row.recipients,
+        attachments: attachmentMap.get(row.id) ?? [],
       },
     ])[0];
     const current = messageMap.get(row.thread_record_id) ?? [];
     current.push(message);
     messageMap.set(row.thread_record_id, current);
+  }
+
+  if (dashboard === "admin") {
+    const { rows: historyRows } = await query<{
+      thread_record_id: string;
+      id: string;
+      field_name: string;
+      old_value: string | null;
+      new_value: string | null;
+      actor_type: string;
+      actor_email: string | null;
+      source: string | null;
+      reason: string | null;
+      created_at: string;
+    }>(
+      `
+        with ranked_history as (
+          select
+            h.thread_record_id::text as thread_record_id,
+            h.id::text as id,
+            h.field_name,
+            h.old_value::text as old_value,
+            h.new_value::text as new_value,
+            h.actor_type,
+            u.email::text as actor_email,
+            h.source,
+            h.reason,
+            h.created_at::text,
+            row_number() over (
+              partition by h.thread_record_id
+              order by h.created_at desc
+            ) as history_rank
+          from public.thread_state_history h
+          left join public.users u on u.id = h.actor_user_id
+          where h.thread_record_id = any($1::uuid[])
+            and h.field_name in (
+              'review_state',
+              'promotion_state',
+              'reply_state',
+              'is_urgent',
+              'primary_event_tag',
+              'event_tags'
+            )
+        )
+        select
+          thread_record_id,
+          id,
+          field_name,
+          old_value,
+          new_value,
+          actor_type,
+          actor_email,
+          source,
+          reason,
+          created_at
+        from ranked_history
+        where history_rank <= 8
+        order by created_at desc
+      `,
+      [threadIds],
+    );
+
+    for (const historyRow of historyRows) {
+      const current = stateHistoryMap.get(historyRow.thread_record_id) ?? [];
+      current.push({
+        id: historyRow.id,
+        fieldName: historyRow.field_name,
+        oldValue: normalizeJsonScalar(historyRow.old_value),
+        newValue: normalizeJsonScalar(historyRow.new_value),
+        actorType: historyRow.actor_type,
+        actorEmail: historyRow.actor_email,
+        source: historyRow.source,
+        reason: historyRow.reason,
+        createdAt: historyRow.created_at,
+      });
+      stateHistoryMap.set(historyRow.thread_record_id, current);
+    }
   }
 
   return rows.map((row) => {
@@ -680,6 +920,9 @@ export async function getThreadsForDashboard(
       primaryEventTag: row.primary_event_tag,
       isUrgent: row.is_urgent,
       noConsultingStaffAttached: row.no_consulting_staff_attached,
+      hasEligibleAttachments: messages.some(
+        (message) => message.attachments.length > 0,
+      ),
       reviewState: row.review_state,
       replyState: row.reply_state,
       projectNumber: row.project_number,
@@ -690,6 +933,7 @@ export async function getThreadsForDashboard(
       hasHumanOverrides: row.has_human_overrides,
       messageCount: row.message_count,
       messages: [...messages].reverse(),
+      stateHistory: stateHistoryMap.get(row.id) ?? [],
     };
   });
 }

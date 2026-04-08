@@ -1,5 +1,7 @@
 import { DashboardFiltersPanel } from "@/components/dashboard-filters";
 import { ThreadList } from "@/components/thread-list";
+import { logUserAccessEvent } from "@/lib/access-audit";
+import { requireAnyRole } from "@/lib/auth";
 import {
   buildReturnToPath,
   getDashboardMetrics,
@@ -14,6 +16,16 @@ export default async function NeedsAttentionPage({
 }: Readonly<{
   searchParams: SearchParams;
 }>) {
+  const currentUser = await requireAnyRole(["admin", "lead"], {
+    accessPath: "/needs-attention",
+  });
+  await logUserAccessEvent({
+    currentUser,
+    eventType: "route_access",
+    status: "success",
+    routePath: "/needs-attention",
+  });
+
   const resolvedSearchParams = await searchParams;
   const filters = parseDashboardFilters(resolvedSearchParams);
   const returnTo = buildReturnToPath("/needs-attention", resolvedSearchParams);
@@ -56,6 +68,7 @@ export default async function NeedsAttentionPage({
         filters={filters}
         openPrimaryEventTagCounts={metrics.openPrimaryEventTagCounts}
         openNoConsultingStaffCount={metrics.openNoConsultingStaffCount}
+        openHasAttachmentCount={metrics.openHasAttachmentCount}
         key={returnTo}
       />
 

@@ -539,12 +539,75 @@ def replace_attachments(
     message_id: str,
     attachments: list[NormalizedAttachment],
 ) -> int:
+    graph_attachment_ids = [
+        attachment.graph_attachment_id
+        for attachment in attachments
+        if attachment.graph_attachment_id
+    ]
+
     with conn.cursor() as cur:
+        if graph_attachment_ids:
+            cur.execute(
+                """
+                delete from public.attachments
+                where message_id = %s
+                  and graph_attachment_id is not null
+                  and not (graph_attachment_id = any(%s::text[]))
+                """,
+                (message_id, graph_attachment_ids),
+            )
+        else:
+            cur.execute(
+                """
+                delete from public.attachments
+                where message_id = %s
+                  and graph_attachment_id is not null
+                """,
+                (message_id,),
+            )
+
         cur.execute(
-            "delete from public.attachments where message_id = %s",
+            """
+            delete from public.attachments
+            where message_id = %s
+              and graph_attachment_id is null
+            """,
             (message_id,),
         )
+
         for attachment in attachments:
+            if attachment.graph_attachment_id is None:
+                cur.execute(
+                    """
+                    insert into public.attachments (
+                      message_id,
+                      graph_attachment_id,
+                      name,
+                      content_type,
+                      size_bytes,
+                      is_inline,
+                      content_id,
+                      last_modified_at_graph,
+                      storage_mode,
+                      reference_payload
+                    )
+                    values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        message_id,
+                        attachment.graph_attachment_id,
+                        attachment.name,
+                        attachment.content_type,
+                        attachment.size_bytes,
+                        attachment.is_inline,
+                        attachment.content_id,
+                        attachment.last_modified_at_graph,
+                        attachment.storage_mode,
+                        Jsonb(attachment.reference_payload),
+                    ),
+                )
+                continue
+
             cur.execute(
                 """
                 insert into public.attachments (
@@ -560,6 +623,15 @@ def replace_attachments(
                   reference_payload
                 )
                 values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (message_id, graph_attachment_id) do update
+                set name = excluded.name,
+                    content_type = excluded.content_type,
+                    size_bytes = excluded.size_bytes,
+                    is_inline = excluded.is_inline,
+                    content_id = excluded.content_id,
+                    last_modified_at_graph = excluded.last_modified_at_graph,
+                    storage_mode = excluded.storage_mode,
+                    reference_payload = excluded.reference_payload
                 """,
                 (
                     message_id,
@@ -575,6 +647,55 @@ def replace_attachments(
                 ),
             )
     return len(attachments)
+
+
+def lock_unfinalized_attachment_policies(
+    conn: psycopg.Connection[Any],
+    *,
+    thread_ids: list[str],
+) -> int:
+    if not thread_ids:
+        return 0
+
+    locked_at = utc_now()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            update public.attachments a
+            set download_eligible = case
+                  when tr.has_external_participants is not true then false
+                  when tr.review_state <> 'open' then false
+                  when a.is_inline then false
+                  when a.graph_attachment_id is null then false
+                  when lower(coalesce(a.reference_payload->>'odata_type', ''))
+                    not in ('#microsoft.graph.fileattachment', 'microsoft.graph.fileattachment')
+                    then false
+                  else true
+                end,
+                download_policy = case
+                  when tr.has_external_participants is not true
+                    then 'hidden_internal_only'
+                  when tr.review_state <> 'open'
+                    then 'hidden_not_open_at_ingest'
+                  when a.is_inline
+                    then 'hidden_inline'
+                  when a.graph_attachment_id is null
+                    then 'hidden_missing_graph_attachment_id'
+                  when lower(coalesce(a.reference_payload->>'odata_type', ''))
+                    not in ('#microsoft.graph.fileattachment', 'microsoft.graph.fileattachment')
+                    then 'hidden_unsupported_attachment_type'
+                  else 'eligible_at_ingest'
+                end,
+                policy_locked_at = %s
+            from public.messages m
+            inner join public.thread_records tr on tr.id = m.thread_record_id
+            where a.message_id = m.id
+              and m.thread_record_id = any(%s::uuid[])
+              and a.policy_locked_at is null
+            """,
+            (locked_at, thread_ids),
+        )
+        return cur.rowcount
 
 
 def replace_communication_events(

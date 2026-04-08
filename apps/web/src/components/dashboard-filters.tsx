@@ -6,6 +6,7 @@ import { startTransition, useCallback, useEffect, useState } from "react";
 import type { DashboardFilters, DashboardName } from "@/lib/dashboard-data";
 import {
   EVENT_TAG_OPTIONS,
+  HAS_ATTACHMENT_LABEL,
   NO_CONSULTING_STAFF_LABEL,
 } from "@/lib/thread-flags";
 
@@ -24,11 +25,13 @@ export function DashboardFiltersPanel({
   filters,
   openPrimaryEventTagCounts,
   openNoConsultingStaffCount,
+  openHasAttachmentCount,
 }: Readonly<{
   dashboard: DashboardName;
   filters: DashboardFilters;
   openPrimaryEventTagCounts?: Record<string, number>;
   openNoConsultingStaffCount?: number;
+  openHasAttachmentCount?: number;
 }>) {
   const router = useRouter();
   const pathname = usePathname();
@@ -37,6 +40,7 @@ export function DashboardFiltersPanel({
   const currentProjectNumber = filters.projectNumber ?? "";
   const selectedTags = filters.tags ?? [];
   const noConsultingStaffSelected = filters.noConsultingStaff === "yes";
+  const hasAttachmentsSelected = filters.hasAttachments === "yes";
   const [client, setClient] = useState(currentClient);
   const [projectNumber, setProjectNumber] = useState(currentProjectNumber);
 
@@ -232,6 +236,26 @@ export function DashboardFiltersPanel({
               {typeof openNoConsultingStaffCount === "number" ? (
                 <span className="status-pill__count">
                   {openNoConsultingStaffCount}
+                </span>
+              ) : null}
+            </button>
+            <button
+              className={`status-pill ${
+                hasAttachmentsSelected
+                  ? "status-pill--warning"
+                  : "status-pill--neutral"
+              }`}
+              onClick={() =>
+                updateQuery({
+                  hasAttachments: hasAttachmentsSelected ? undefined : "yes",
+                })
+              }
+              type="button"
+            >
+              {HAS_ATTACHMENT_LABEL}
+              {typeof openHasAttachmentCount === "number" ? (
+                <span className="status-pill__count">
+                  {openHasAttachmentCount}
                 </span>
               ) : null}
             </button>

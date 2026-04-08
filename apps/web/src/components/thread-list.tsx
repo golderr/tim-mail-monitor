@@ -9,9 +9,10 @@ import type {
   DashboardName,
   DashboardThread,
   InternalParticipant,
+  ThreadStateHistoryEntry,
   ThreadMessage,
 } from "@/lib/dashboard-data";
-import { EVENT_LABELS } from "@/lib/thread-flags";
+import { EVENT_LABELS, HAS_ATTACHMENT_LABEL } from "@/lib/thread-flags";
 
 const REVIEW_STATE_LABELS: Record<string, string> = {
   open: "Open",
@@ -138,6 +139,57 @@ function renderRecipients(message: ThreadMessage) {
     const label = recipient.displayName || recipient.email;
     return `${recipient.recipientType.toUpperCase()}: ${label}`;
   });
+}
+
+function formatAttachmentSize(sizeBytes: number) {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(sizeBytes < 10 * 1024 ? 1 : 0)} KB`;
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(sizeBytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
+function collectThreadAttachments(messages: ThreadMessage[]) {
+  return [...messages]
+    .reverse()
+    .flatMap((message) =>
+      message.attachments.map((attachment) => ({
+        ...attachment,
+        messageTimestamp: message.timestamp,
+      })),
+    );
+}
+
+const HISTORY_FIELD_LABELS: Record<string, string> = {
+  review_state: "Review State",
+  promotion_state: "Promotion",
+  reply_state: "Reply State",
+  is_urgent: "Urgency",
+  primary_event_tag: "Primary Tag",
+  event_tags: "Event Tags",
+};
+
+function renderStateHistoryEntry(entry: ThreadStateHistoryEntry) {
+  const actor =
+    entry.actorEmail ||
+    (entry.actorType === "system" ? "System" : "User");
+
+  return (
+    <div className="list-item thread-card__history-item" key={entry.id}>
+      <strong>
+        {HISTORY_FIELD_LABELS[entry.fieldName] ?? entry.fieldName}:{" "}
+        {entry.oldValue ?? "Empty"} {"->"} {entry.newValue ?? "Empty"}
+      </strong>
+      <span>
+        {actor} | {new Date(entry.createdAt).toLocaleString()}
+        {entry.source ? ` | ${entry.source}` : ""}
+      </span>
+    </div>
+  );
 }
 
 function getReferenceLocalDate(
@@ -327,6 +379,7 @@ export function ThreadList({
         const hasInternalParticipants =
           item.internalParticipantsCurrent.length > 0 ||
           item.internalParticipantsHistorical.length > 0;
+        const threadAttachments = collectThreadAttachments(item.messages);
 
         return (
           <article className="thread-card" key={item.id}>
@@ -389,6 +442,11 @@ export function ThreadList({
                     No Consulting Staff
                   </span>
                 ) : null}
+                {item.hasEligibleAttachments ? (
+                  <span className="status-pill status-pill--neutral">
+                    {HAS_ATTACHMENT_LABEL}
+                  </span>
+                ) : null}
                 {showReviewState ? (
                   <span className="status-pill status-pill--neutral">
                     {REVIEW_STATE_LABELS[item.reviewState] ?? item.reviewState}
@@ -416,6 +474,33 @@ export function ThreadList({
                 ? renderSummaryText(item.summary, item.latestCorrespondenceAt)
                 : "No summary or snippet is stored yet for this thread."}
             </p>
+
+            {threadAttachments.length > 0 ? (
+              <div className="thread-card__attachments">
+                <span className="thread-card__attachments-label">
+                  Attachments
+                </span>
+                <div className="thread-card__attachments-list">
+                  {threadAttachments.map((attachment) => (
+                    <a
+                      className="thread-card__attachment"
+                      href={attachment.downloadPath}
+                      key={attachment.id}
+                    >
+                      <span className="thread-card__attachment-name">
+                        {attachment.name}
+                      </span>
+                      <span className="thread-card__attachment-meta">
+                        Download | {formatAttachmentSize(attachment.sizeBytes)}
+                        {attachment.messageTimestamp
+                          ? ` | ${formatTimestamp(attachment.messageTimestamp)}`
+                          : ""}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <details className="thread-card__details-panel">
               <summary>Expand full thread</summary>
@@ -447,6 +532,24 @@ export function ThreadList({
                           <p key={line}>{line}</p>
                         ))}
                       </div>
+                      {message.attachments.length > 0 ? (
+                        <div className="message-card__attachments">
+                          {message.attachments.map((attachment) => (
+                            <a
+                              className="message-card__attachment"
+                              href={attachment.downloadPath}
+                              key={attachment.id}
+                            >
+                              <span className="message-card__attachment-name">
+                                {attachment.name}
+                              </span>
+                              <span className="message-card__attachment-size">
+                                Download | {formatAttachmentSize(attachment.sizeBytes)}
+                              </span>
+                            </a>
+                          ))}
+                        </div>
+                      ) : null}
                       <pre className="message-card__body">
                         {message.bodyText || "No message body stored."}
                       </pre>
@@ -510,7 +613,17 @@ export function ThreadList({
             </div>
 
             {dashboard === "admin" ? (
-              <AdminThreadOverrideForm item={item} returnTo={returnTo} />
+              <>
+                {item.stateHistory.length > 0 ? (
+                  <details className="override-panel">
+                    <summary>Status log</summary>
+                    <div className="list thread-card__history-list">
+                      {item.stateHistory.map((entry) => renderStateHistoryEntry(entry))}
+                    </div>
+                  </details>
+                ) : null}
+                <AdminThreadOverrideForm item={item} returnTo={returnTo} />
+              </>
             ) : null}
           </article>
         );
